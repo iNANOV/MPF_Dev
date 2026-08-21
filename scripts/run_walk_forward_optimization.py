@@ -58,9 +58,7 @@ from config import (
     MAX_WORKERS
 )
 
-from src.walk_forward import (
-    run_single_walk_forward
-)
+from src.walk_forward import run_single_walk_forward
 
 
 # ============================================================
@@ -68,101 +66,144 @@ from src.walk_forward import (
 # ============================================================
 
 def run_worker(max_num_components):
+    """
+    Run the complete walk-forward optimization for one value
+    of max_num_components.
+
+    Each worker loads its own data so that large DataFrames do
+    not have to be serialized and transferred between processes.
+    """
+
+    worker_start = time.time()
 
     print(
-        f"[START] "
-        f"max_num_components={max_num_components}",
+        f"[START] max_num_components={max_num_components}",
         flush=True
     )
 
-    # --------------------------------------------------------
-    # Load data inside worker
-    # --------------------------------------------------------
+    try:
 
-    data = pd.read_parquet(DATA_FILE)
+        # ----------------------------------------------------
+        # Load data
+        # ----------------------------------------------------
 
-    membership = pd.read_csv(
-        MEMBERSHIP_FILE,
-        parse_dates=["from", "to"]
-    )
+        data = pd.read_parquet(DATA_FILE)
 
-    components = (
-        membership["ticker"]
-        .drop_duplicates()
-        .tolist()
-    )
-
-    start_time = time.time()
-
-    # --------------------------------------------------------
-    # Run walk-forward optimization
-    # --------------------------------------------------------
-
-    result = run_single_walk_forward(
-
-        data=data,
-
-        components=components,
-
-        membership=membership,
-
-        strategy=STRATEGY,
-
-        ma_column=MA_COLUMN,
-
-        ranking_column=RANKING_COLUMN,
-
-        max_num_components=max_num_components,
-
-        start_date=START_DATE,
-
-        window=CALIBRATION_WINDOW,
-
-        moving_param=MOVING_PARAM,
-
-        test_span=TEST_SPAN,
-
-        n_simulations=N_SIMULATIONS,
-
-        threshold_step=THRESHOLD_STEP,
-
-        random_state=(
-            RANDOM_STATE +
-            max_num_components
-        ),
-
-        initial_capital=INITIAL_CAPITAL,
-
-        abs_cost_for_a_trade=(
-            ABS_COST_FOR_A_TRADE
-        ),
-
-        percent_cost_for_a_trade=(
-            PERCENT_COST_FOR_A_TRADE
-        ),
-
-        max_investment_size_in_percent=(
-            MAX_INVESTMENT_SIZE_IN_PERCENT
-        ),
-
-        min_cash_in_percent=(
-            MIN_CASH_IN_PERCENT
+        membership = pd.read_csv(
+            MEMBERSHIP_FILE,
+            parse_dates=["from", "to"]
         )
-    )
 
-    elapsed = (
-        time.time() - start_time
-    )
+        components = (
+            membership["ticker"]
+            .drop_duplicates()
+            .tolist()
+        )
 
-    print(
-        f"[DONE ] "
-        f"max_num_components={max_num_components} "
-        f"windows={len(result)} "
-        f"time={elapsed / 60:.2f} min",
-        flush=True
-    )
+        # ----------------------------------------------------
+        # Run walk-forward optimization
+        # ----------------------------------------------------
 
-    return result
+        result = run_single_walk_forward(
+
+            data=data,
+
+            components=components,
+
+            membership=membership,
+
+            strategy=STRATEGY,
+
+            ma_column=MA_COLUMN,
+
+            ranking_column=RANKING_COLUMN,
+
+            max_num_components=max_num_components,
+
+            start_date=START_DATE,
+
+            window=CALIBRATION_WINDOW,
+
+            moving_param=MOVING_PARAM,
+
+            test_span=TEST_SPAN,
+
+            n_simulations=N_SIMULATIONS,
+
+            threshold_step=THRESHOLD_STEP,
+
+            random_state=(
+                RANDOM_STATE +
+                max_num_components
+            ),
+
+            initial_capital=INITIAL_CAPITAL,
+
+            abs_cost_for_a_trade=(
+                ABS_COST_FOR_A_TRADE
+            ),
+
+            percent_cost_for_a_trade=(
+                PERCENT_COST_FOR_A_TRADE
+            ),
+
+            max_investment_size_in_percent=(
+                MAX_INVESTMENT_SIZE_IN_PERCENT
+            ),
+
+            min_cash_in_percent=(
+                MIN_CASH_IN_PERCENT
+            )
+        )
+
+        elapsed = time.time() - worker_start
+
+        # ----------------------------------------------------
+        # Check result
+        # ----------------------------------------------------
+
+        if result is None:
+
+            print(
+                f"[DONE ] max_num_components="
+                f"{max_num_components} "
+                f"| NO RESULT "
+                f"| time={elapsed / 60:.2f} min",
+                flush=True
+            )
+
+            return None
+
+        # Number of walk-forward windows
+        try:
+            n_windows = len(result)
+        except TypeError:
+            n_windows = 0
+
+        print(
+            f"[DONE ] max_num_components="
+            f"{max_num_components} "
+            f"| windows={n_windows} "
+            f"| time={elapsed / 60:.2f} min",
+            flush=True
+        )
+
+        return result
+
+    except Exception as error:
+
+        elapsed = time.time() - worker_start
+
+        print(
+            f"[ERROR] max_num_components="
+            f"{max_num_components} "
+            f"| {type(error).__name__}: {error} "
+            f"| time={elapsed / 60:.2f} min",
+            flush=True
+        )
+
+        # Re-raise so the main process knows this job failed
+        raise
 
 
 # ============================================================
@@ -172,9 +213,13 @@ def run_worker(max_num_components):
 def main():
 
     print()
-    print("=" * 75)
+    print("=" * 80)
     print(" WALK-FORWARD MONTE-CARLO OPTIMIZATION")
-    print("=" * 75)
+    print("=" * 80)
+
+    # --------------------------------------------------------
+    # Configuration
+    # --------------------------------------------------------
 
     print(
         f"Strategy             : {STRATEGY}"
@@ -236,7 +281,7 @@ def main():
         f"{OUTPUT_FILE}"
     )
 
-    print("=" * 75)
+    print("=" * 80)
     print()
 
     # --------------------------------------------------------
@@ -257,15 +302,14 @@ def main():
         )
 
     # --------------------------------------------------------
-    # Load once to show information
+    # Load data once for diagnostics
     # --------------------------------------------------------
 
-    data = pd.read_parquet(
-        DATA_FILE
-    )
+    data = pd.read_parquet(DATA_FILE)
 
     membership = pd.read_csv(
-        MEMBERSHIP_FILE
+        MEMBERSHIP_FILE,
+        parse_dates=["from", "to"]
     )
 
     components = (
@@ -275,15 +319,18 @@ def main():
     )
 
     print(
-        f"Data rows           : {len(data):,}"
+        f"Data rows           : "
+        f"{len(data):,}"
     )
 
     print(
-        f"Data columns        : {len(data.columns):,}"
+        f"Data columns        : "
+        f"{len(data.columns):,}"
     )
 
     print(
-        f"Components           : {len(components)}"
+        f"Components           : "
+        f"{len(components)}"
     )
 
     print(
@@ -306,20 +353,30 @@ def main():
         )
     )
 
-    total_jobs = len(
-        component_values
-    )
+    total_jobs = len(component_values)
 
     print(
-        f"Total parallel jobs  : "
+        f"Total optimization jobs : "
         f"{total_jobs}"
     )
 
+    print(
+        f"Parallel workers        : "
+        f"{MAX_WORKERS or 'automatic'}"
+    )
+
+    print()
+
+    print("=" * 80)
+    print(" STARTING PARALLEL OPTIMIZATION")
+    print("=" * 80)
     print()
 
     overall_start = time.time()
 
     all_results = []
+
+    completed = 0
 
     # --------------------------------------------------------
     # Parallel execution
@@ -337,48 +394,77 @@ def main():
             for n in component_values
         }
 
-        completed = 0
+        # ----------------------------------------------------
+        # Process jobs as they finish
+        # ----------------------------------------------------
 
-        for future in as_completed(
-            futures
-        ):
+        for future in as_completed(futures):
 
             n = futures[future]
+
+            completed += 1
 
             try:
 
                 result = future.result()
 
                 if result is not None:
-                    all_results.append(
-                        result
-                    )
 
-                completed += 1
+                    all_results.append(result)
+
+                    try:
+                        n_windows = len(result)
+                    except TypeError:
+                        n_windows = 0
+
+                else:
+
+                    n_windows = 0
 
                 elapsed = (
-                    time.time() -
-                    overall_start
+                    time.time()
+                    - overall_start
                 )
 
+                progress = (
+                    100.0
+                    * completed
+                    / total_jobs
+                )
+
+                print()
                 print(
                     f"[PROGRESS] "
                     f"{completed}/{total_jobs} "
-                    f"({100 * completed / total_jobs:.1f}%) "
+                    f"({progress:.1f}%) "
                     f"| max_components={n} "
+                    f"| windows={n_windows} "
                     f"| elapsed={elapsed / 60:.1f} min",
                     flush=True
                 )
 
             except Exception as error:
 
-                completed += 1
+                elapsed = (
+                    time.time()
+                    - overall_start
+                )
 
+                progress = (
+                    100.0
+                    * completed
+                    / total_jobs
+                )
+
+                print()
                 print(
-                    f"[ERROR] "
-                    f"max_num_components={n} "
+                    f"[FAILED] "
+                    f"{completed}/{total_jobs} "
+                    f"({progress:.1f}%) "
+                    f"| max_components={n} "
                     f"| {type(error).__name__}: "
-                    f"{error}",
+                    f"{error} "
+                    f"| elapsed={elapsed / 60:.1f} min",
                     flush=True
                 )
 
@@ -393,27 +479,54 @@ def main():
         )
 
     # --------------------------------------------------------
-    # Combine
+    # Combine results
     # --------------------------------------------------------
+
+    print()
+    print(
+        "Combining optimization results..."
+    )
 
     results = pd.concat(
         all_results,
         ignore_index=True
     )
 
-    results = (
-        results
-        .sort_values(
-            [
-                "max_num_components",
-                "test_start"
-            ]
+    # --------------------------------------------------------
+    # Sort results
+    # --------------------------------------------------------
+
+    sort_columns = []
+
+    if "max_num_components" in results.columns:
+        sort_columns.append(
+            "max_num_components"
         )
-        .reset_index(drop=True)
+
+    if "test_start" in results.columns:
+        sort_columns.append(
+            "test_start"
+        )
+
+    if sort_columns:
+
+        results = (
+            results
+            .sort_values(sort_columns)
+            .reset_index(drop=True)
+        )
+
+    # --------------------------------------------------------
+    # Create output directory if necessary
+    # --------------------------------------------------------
+
+    OUTPUT_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True
     )
 
     # --------------------------------------------------------
-    # Save
+    # Save results
     # --------------------------------------------------------
 
     results.to_csv(
@@ -422,31 +535,41 @@ def main():
     )
 
     total_time = (
-        time.time() -
-        overall_start
+        time.time()
+        - overall_start
     )
 
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
+
     print()
-    print("=" * 75)
+    print("=" * 80)
     print(" OPTIMIZATION FINISHED")
-    print("=" * 75)
+    print("=" * 80)
 
     print(
-        f"Result rows         : "
+        f"Successful jobs      : "
+        f"{len(all_results)}/{total_jobs}"
+    )
+
+    print(
+        f"Result rows          : "
         f"{len(results):,}"
     )
 
     print(
-        f"Output              : "
+        f"Output               : "
         f"{OUTPUT_FILE}"
     )
 
     print(
-        f"Total runtime       : "
+        f"Total runtime        : "
         f"{total_time / 60:.2f} minutes"
     )
 
-    print("=" * 75)
+    print("=" * 80)
+    print()
 
 
 # ============================================================

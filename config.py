@@ -115,7 +115,7 @@ RANDOM_STATE = 42
 # 2, 3, 4, ..., 20
 #
 MIN_NUM_COMPONENTS = 2
-MAX_NUM_COMPONENTS = 4
+MAX_NUM_COMPONENTS = 3
 
 
 # ============================================================
@@ -141,7 +141,7 @@ MIN_CASH_IN_PERCENT = 10
 #
 # Example:
 #
-MAX_WORKERS = 20
+MAX_WORKERS = 2
 #
 # can be useful if the machine has many CPUs but you don't
 # want the optimization to consume all of them.

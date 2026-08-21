@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 def generate_signals(
     data,
@@ -235,27 +236,62 @@ def create_invest_trades(
     """
     Select theoretical trades subject to portfolio constraints.
 
-    Handles components with no trades.
+    Handles:
+    - components with no trades
+    - empty trade DataFrames
+    - missing 'buy' columns
+    - missing ranking columns
+    - missing ranking values
+    - open trades
+    - no pd.concat() FutureWarning
     """
 
     start_date = pd.Timestamp(start_date)
 
     # ---------------------------------------------------------
+    # Expected output columns
+    # ---------------------------------------------------------
+
+    empty_columns = [
+        "buy",
+        "buy_price",
+        "sell",
+        "sell_price",
+        "duration",
+        "return",
+        "component"
+    ]
+
+    # ---------------------------------------------------------
     # 1. Collect all valid theoretical trades
     # ---------------------------------------------------------
 
-    all_trades = []
+    all_trade_records = []
 
     for component, trades in trade_list:
 
-        # Skip components with no trades
+        # Skip None / empty DataFrames
         if trades is None or trades.empty:
             continue
 
-        # Make sure required columns exist
+        # Skip malformed DataFrames
         if "buy" not in trades.columns:
             continue
 
+        trades = trades.copy()
+
+        # Make sure buy is datetime
+        trades["buy"] = pd.to_datetime(
+            trades["buy"],
+            errors="coerce"
+        )
+
+        # Remove invalid buy dates
+        trades = trades.dropna(
+            subset=["buy"]
+        )
+
+        # Only trades from start_date onward
         trades = trades[
             trades["buy"] >= start_date
         ].copy()
@@ -263,37 +299,49 @@ def create_invest_trades(
         if trades.empty:
             continue
 
+        # Add component
         trades["component"] = component
 
-        all_trades.append(trades)
+        # -----------------------------------------------------
+        # Convert directly to records
+        # This avoids pandas concat completely.
+        # -----------------------------------------------------
+
+        for record in trades.to_dict("records"):
+
+            # Keep only expected columns
+            clean_record = {
+                col: record.get(col, pd.NA)
+                for col in empty_columns
+            }
+
+            all_trade_records.append(
+                clean_record
+            )
 
     # ---------------------------------------------------------
     # 2. No trades available
     # ---------------------------------------------------------
 
-    if not all_trades:
+    if not all_trade_records:
+
         return pd.DataFrame(
-            columns=[
-                "buy",
-                "buy_price",
-                "sell",
-                "sell_price",
-                "duration",
-                "return",
-                "component"
-            ]
+            columns=empty_columns
         )
 
     # ---------------------------------------------------------
-    # 3. Combine all trades
+    # 3. Create one DataFrame directly from records
     # ---------------------------------------------------------
 
-    all_trades = pd.concat(
-        all_trades,
-        ignore_index=True
+    all_trades = pd.DataFrame(
+        all_trade_records,
+        columns=empty_columns
     )
 
-    # Chronological order
+    # ---------------------------------------------------------
+    # 4. Chronological order
+    # ---------------------------------------------------------
+
     all_trades = (
         all_trades
         .sort_values("buy")
@@ -301,7 +349,7 @@ def create_invest_trades(
     )
 
     # ---------------------------------------------------------
-    # 4. Portfolio selection
+    # 5. Portfolio selection
     # ---------------------------------------------------------
 
     invested = set()
@@ -319,26 +367,31 @@ def create_invest_trades(
         for component in list(invested):
 
             component_selected = [
-                x for x in selected
+                x
+                for x in selected
                 if x["component"] == component
             ]
 
-            if component_selected:
+            if not component_selected:
+                continue
 
-                last_trade = component_selected[-1]
+            last_trade = component_selected[-1]
 
-                if (
-                    pd.notna(last_trade["sell"])
-                    and last_trade["sell"] <= buy_date
-                ):
-                    invested.remove(component)
+            sell_date = last_trade.get("sell")
+
+            if (
+                pd.notna(sell_date)
+                and sell_date <= buy_date
+            ):
+                invested.remove(component)
 
         # -----------------------------------------------------
-        # Available slots
+        # Available portfolio slots
         # -----------------------------------------------------
 
         available_slots = (
-            max_num_components - len(invested)
+            max_num_components
+            - len(invested)
         )
 
         if available_slots <= 0:
@@ -349,14 +402,16 @@ def create_invest_trades(
         # -----------------------------------------------------
 
         candidates = day_trades[
-            ~day_trades["component"].isin(invested)
+            ~day_trades["component"].isin(
+                invested
+            )
         ].copy()
 
         if candidates.empty:
             continue
 
         # -----------------------------------------------------
-        # Ranking
+        # Calculate ranking
         # -----------------------------------------------------
 
         ranking_values = []
@@ -370,25 +425,54 @@ def create_invest_trades(
                 component
             )
 
+            # Ranking column does not exist
             if ranking_col not in data.columns:
-                ranking_values.append(float("-inf"))
+
+                ranking_values.append(
+                    np.nan
+                )
+
                 continue
 
+            # Date does not exist
+            if date not in data.index:
+
+                ranking_values.append(
+                    np.nan
+                )
+
+                continue
+
+            value = data.loc[
+                date,
+                ranking_col
+            ]
+
+            # Protect against duplicate index
+            if isinstance(value, pd.Series):
+                value = value.iloc[0]
+
             ranking_values.append(
-                data.loc[date, ranking_col]
+                value
             )
 
         candidates["_ranking"] = ranking_values
 
-        # Remove candidates without ranking information
+        # -----------------------------------------------------
+        # Remove candidates without ranking
+        # -----------------------------------------------------
+
         candidates = candidates[
             candidates["_ranking"].notna()
-        ]
+        ].copy()
 
         if candidates.empty:
             continue
 
-        # Highest ranking first
+        # -----------------------------------------------------
+        # Highest mu/sigma first
+        # -----------------------------------------------------
+
         candidates = candidates.sort_values(
             "_ranking",
             ascending=False
@@ -411,27 +495,29 @@ def create_invest_trades(
         )
 
         invested.update(
-            selected_candidates["component"]
-        )
-
-    # ---------------------------------------------------------
-    # 5. Final result
-    # ---------------------------------------------------------
-
-    if not selected:
-        return pd.DataFrame(
-            columns=[
-                "buy",
-                "buy_price",
-                "sell",
-                "sell_price",
-                "duration",
-                "return",
+            selected_candidates[
                 "component"
             ]
         )
 
-    invest_trades = pd.DataFrame(selected)
+    # ---------------------------------------------------------
+    # 6. No selected trades
+    # ---------------------------------------------------------
+
+    if not selected:
+
+        return pd.DataFrame(
+            columns=empty_columns
+        )
+
+    # ---------------------------------------------------------
+    # 7. Final DataFrame
+    # ---------------------------------------------------------
+
+    invest_trades = pd.DataFrame(
+        selected,
+        columns=empty_columns
+    )
 
     return (
         invest_trades
