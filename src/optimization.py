@@ -361,8 +361,7 @@ def monte_carlo_optimize(
     """
     Monte-Carlo optimization on historical calibration data.
 
-    Only information available up to calibration_end
-    is used.
+    Only information available up to calibration_end is used.
 
     Every valid simulation stores:
 
@@ -375,11 +374,18 @@ def monte_carlo_optimize(
         max_drawdown
         calmar
 
-    The current winner is selected by Sharpe ratio.
+    Two threshold candidates are returned:
 
-    Additionally, the top 10% of simulations are stored
-    and their median thresholds are calculated as a
-    robust threshold candidate.
+    1. BEST
+       The single simulation with the highest Sharpe ratio.
+
+    2. ROBUST
+       The median buy/sell thresholds of the top 10%
+       of simulations ranked by Sharpe.
+
+    The robust candidate is intended to represent a
+    stable high-performing region rather than a single
+    potentially lucky Monte-Carlo result.
 
     progress_info:
         Optional dictionary containing:
@@ -503,7 +509,7 @@ def monte_carlo_optimize(
             ]
 
             # ------------------------------------------------
-            # Calculate statistics
+            # Calculate portfolio statistics
             # ------------------------------------------------
 
             stats = calculate_portfolio_statistics(
@@ -517,7 +523,6 @@ def monte_carlo_optimize(
             if np.isnan(
                 stats["sharpe"]
             ):
-
                 continue
 
             # ------------------------------------------------
@@ -553,7 +558,6 @@ def monte_carlo_optimize(
             )
 
         except Exception:
-
             continue
 
         # ====================================================
@@ -591,12 +595,25 @@ def monte_carlo_optimize(
     )
 
     # ========================================================
-    # Single best simulation
+    # Sort by Sharpe
     # ========================================================
 
-    best = results_df.loc[
-        results_df["sharpe"].idxmax()
-    ].copy()
+    results_df = (
+        results_df
+        .sort_values(
+            "sharpe",
+            ascending=False
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    # ========================================================
+    # SINGLE BEST SIMULATION
+    # ========================================================
+
+    best = results_df.iloc[0].copy()
 
     # ========================================================
     # TOP 10%
@@ -613,80 +630,149 @@ def monte_carlo_optimize(
 
     top10_results = (
         results_df
-        .sort_values(
-            "sharpe",
-            ascending=False
-        )
         .head(top_n)
         .copy()
+        .reset_index(
+            drop=True
+        )
     )
 
     # ========================================================
-    # Robust thresholds
+    # ROBUST THRESHOLDS
+    #
+    # Median thresholds of the top 10%.
     # ========================================================
 
     robust_buy_thr = (
-        top10_results["buy_thr"]
+        top10_results[
+            "buy_thr"
+        ]
         .median()
     )
 
     robust_sell_thr = (
-        top10_results["sell_thr"]
+        top10_results[
+            "sell_thr"
+        ]
         .median()
     )
 
     # ========================================================
-    # Top 10% statistics
+    # TOP 10% STATISTICS
     # ========================================================
 
     top10_mean_sharpe = (
-        top10_results["sharpe"]
+        top10_results[
+            "sharpe"
+        ]
         .mean()
     )
 
     top10_median_sharpe = (
-        top10_results["sharpe"]
+        top10_results[
+            "sharpe"
+        ]
         .median()
     )
 
     top10_mean_return = (
-        top10_results["total_return"]
+        top10_results[
+            "total_return"
+        ]
         .mean()
     )
 
     top10_median_return = (
-        top10_results["total_return"]
+        top10_results[
+            "total_return"
+        ]
         .median()
     )
 
     top10_mean_drawdown = (
-        top10_results["max_drawdown"]
+        top10_results[
+            "max_drawdown"
+        ]
         .mean()
     )
 
     top10_median_drawdown = (
-        top10_results["max_drawdown"]
+        top10_results[
+            "max_drawdown"
+        ]
         .median()
     )
 
     top10_mean_calmar = (
-        top10_results["calmar"]
+        top10_results[
+            "calmar"
+        ]
         .mean()
     )
 
     top10_median_calmar = (
-        top10_results["calmar"]
+        top10_results[
+            "calmar"
+        ]
         .median()
     )
 
     # ========================================================
-    # Return
+    # TOP 10% THRESHOLD DISPERSION
+    #
+    # Useful for measuring how stable the region is.
+    # ========================================================
+
+    top10_buy_std = (
+        top10_results[
+            "buy_thr"
+        ]
+        .std()
+    )
+
+    top10_sell_std = (
+        top10_results[
+            "sell_thr"
+        ]
+        .std()
+    )
+
+    top10_buy_min = (
+        top10_results[
+            "buy_thr"
+        ]
+        .min()
+    )
+
+    top10_buy_max = (
+        top10_results[
+            "buy_thr"
+        ]
+        .max()
+    )
+
+    top10_sell_min = (
+        top10_results[
+            "sell_thr"
+        ]
+        .min()
+    )
+
+    top10_sell_max = (
+        top10_results[
+            "sell_thr"
+        ]
+        .max()
+    )
+
+    # ========================================================
+    # RETURN
     # ========================================================
 
     return {
 
         # ----------------------------------------------------
-        # Single best simulation
+        # SINGLE BEST SIMULATION
         # ----------------------------------------------------
 
         "best_buy_thr":
@@ -698,8 +784,23 @@ def monte_carlo_optimize(
         "best_sharpe":
             best["sharpe"],
 
+        "best_total_return":
+            best["total_return"],
+
+        "best_mu":
+            best["mu"],
+
+        "best_sigma":
+            best["sigma"],
+
+        "best_max_drawdown":
+            best["max_drawdown"],
+
+        "best_calmar":
+            best["calmar"],
+
         # ----------------------------------------------------
-        # Robust top-10% thresholds
+        # ROBUST TOP-10% THRESHOLDS
         # ----------------------------------------------------
 
         "robust_buy_thr":
@@ -709,11 +810,15 @@ def monte_carlo_optimize(
             robust_sell_thr,
 
         # ----------------------------------------------------
-        # Top-10% information
+        # TOP-10% SIZE
         # ----------------------------------------------------
 
         "top10_n":
             top_n,
+
+        # ----------------------------------------------------
+        # TOP-10% PERFORMANCE
+        # ----------------------------------------------------
 
         "top10_mean_sharpe":
             top10_mean_sharpe,
@@ -740,7 +845,34 @@ def monte_carlo_optimize(
             top10_median_calmar,
 
         # ----------------------------------------------------
-        # Best simulation statistics
+        # TOP-10% THRESHOLD STABILITY
+        # ----------------------------------------------------
+
+        "top10_buy_std":
+            top10_buy_std,
+
+        "top10_sell_std":
+            top10_sell_std,
+
+        "top10_buy_min":
+            top10_buy_min,
+
+        "top10_buy_max":
+            top10_buy_max,
+
+        "top10_sell_min":
+            top10_sell_min,
+
+        "top10_sell_max":
+            top10_sell_max,
+
+        # ----------------------------------------------------
+        # COMPATIBILITY WITH EXISTING WALK_FORWARD.PY
+        #
+        # IMPORTANT:
+        # These still refer to the SINGLE BEST simulation.
+        # We will change walk_forward.py in the next step
+        # so that the actual OOS test uses robust thresholds.
         # ----------------------------------------------------
 
         "mu":
@@ -749,7 +881,6 @@ def monte_carlo_optimize(
         "sigma":
             best["sigma"],
 
-        # Compatibility with existing walk_forward.py
         "mu_sigma":
             best["sharpe"],
 
@@ -766,14 +897,14 @@ def monte_carlo_optimize(
             best["calmar"],
 
         # ----------------------------------------------------
-        # ALL valid simulations
+        # ALL VALID SIMULATIONS
         # ----------------------------------------------------
 
         "all_results":
             results_df,
 
         # ----------------------------------------------------
-        # TOP 10% simulations
+        # TOP 10% SIMULATIONS
         # ----------------------------------------------------
 
         "top10_results":

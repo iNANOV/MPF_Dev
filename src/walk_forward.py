@@ -33,23 +33,25 @@ def run_single_walk_forward(
     For every walk-forward window:
 
         1. Calibrate thresholds using Monte-Carlo.
-        2. Select the best threshold combination by Sharpe ratio.
-        3. Apply the selected thresholds to the following
-           out-of-sample test period.
-        4. Store calibration statistics.
-        5. Store out-of-sample portfolio and index returns.
+        2. Identify the single best Monte-Carlo combination.
+        3. Identify the robust thresholds from the top 10%.
+        4. Test BOTH approaches out-of-sample.
+        5. Store calibration statistics.
+        6. Store out-of-sample performance.
 
-    Calibration statistics stored:
+    Two threshold approaches are evaluated:
 
-        - total_return
-        - mu
-        - sigma
-        - sharpe
-        - max_drawdown
-        - calmar
+        A. BEST
+           The single Monte-Carlo simulation with the
+           highest Sharpe ratio.
 
-    Progress is reported after every completed
-    walk-forward window.
+        B. ROBUST
+           Median buy/sell thresholds among the top 10%
+           Monte-Carlo simulations ranked by Sharpe.
+
+    This allows us to compare whether a robust parameter
+    region performs better than selecting one potentially
+    over-optimized winner.
     """
 
     start_time = time.time()
@@ -218,19 +220,35 @@ def run_single_walk_forward(
             continue
 
         # =====================================================
-        # BEST THRESHOLDS
+        # 2. EXTRACT BOTH PARAMETER SETS
         # =====================================================
 
-        buy_thr = optimization[
+        # -----------------------------------------------------
+        # Single best Monte-Carlo winner
+        # -----------------------------------------------------
+
+        best_buy_thr = optimization[
             "best_buy_thr"
         ]
 
-        sell_thr = optimization[
+        best_sell_thr = optimization[
             "best_sell_thr"
         ]
 
+        # -----------------------------------------------------
+        # Robust top-10% thresholds
+        # -----------------------------------------------------
+
+        robust_buy_thr = optimization[
+            "robust_buy_thr"
+        ]
+
+        robust_sell_thr = optimization[
+            "robust_sell_thr"
+        ]
+
         # =====================================================
-        # 2. OUT-OF-SAMPLE TEST
+        # 3. PREPARE TEST DATA
         # =====================================================
 
         # IMPORTANT:
@@ -244,7 +262,11 @@ def run_single_walk_forward(
             test_start:
         ].copy()
 
-        result = run_strategy(
+        # =====================================================
+        # 4. TEST SINGLE BEST PARAMETERS
+        # =====================================================
+
+        best_result = run_strategy(
 
             data=test_data,
 
@@ -252,9 +274,9 @@ def run_single_walk_forward(
 
             ma_column=ma_column,
 
-            buy_thr=buy_thr,
+            buy_thr=best_buy_thr,
 
-            sell_thr=sell_thr,
+            sell_thr=best_sell_thr,
 
             strategy=strategy,
 
@@ -285,37 +307,111 @@ def run_single_walk_forward(
             )
         )
 
-        portfolio = result[
+        best_portfolio = best_result[
             "portfolio"
         ]
 
         # =====================================================
-        # 3. OUT-OF-SAMPLE PORTFOLIO RETURN
+        # 5. TEST ROBUST TOP-10% PARAMETERS
         # =====================================================
 
-        evaluation = portfolio.loc[
+        robust_result = run_strategy(
+
+            data=test_data,
+
+            components=components,
+
+            ma_column=ma_column,
+
+            buy_thr=robust_buy_thr,
+
+            sell_thr=robust_sell_thr,
+
+            strategy=strategy,
+
+            membership=membership,
+
+            max_num_components=max_num_components,
+
+            start_date=test_start,
+
+            ranking_column=ranking_column,
+
+            initial_capital=initial_capital,
+
+            abs_cost_for_a_trade=(
+                abs_cost_for_a_trade
+            ),
+
+            percent_cost_for_a_trade=(
+                percent_cost_for_a_trade
+            ),
+
+            max_investment_size_in_percent=(
+                max_investment_size_in_percent
+            ),
+
+            min_cash_in_percent=(
+                min_cash_in_percent
+            )
+        )
+
+        robust_portfolio = robust_result[
+            "portfolio"
+        ]
+
+        # =====================================================
+        # 6. EVALUATE BEST OUT-OF-SAMPLE PERFORMANCE
+        # =====================================================
+
+        best_evaluation = best_portfolio.loc[
             test_start:test_end
         ]
 
-        if evaluation.empty:
+        if best_evaluation.empty:
 
-            test_return = np.nan
+            best_test_return = np.nan
 
         else:
 
-            test_return = (
-                evaluation[
+            best_test_return = (
+                best_evaluation[
                     "portfolio_value"
                 ].iloc[-1]
                 /
-                evaluation[
+                best_evaluation[
                     "portfolio_value"
                 ].iloc[0]
                 - 1
             )
 
         # =====================================================
-        # 4. DOW RETURN
+        # 7. EVALUATE ROBUST OUT-OF-SAMPLE PERFORMANCE
+        # =====================================================
+
+        robust_evaluation = robust_portfolio.loc[
+            test_start:test_end
+        ]
+
+        if robust_evaluation.empty:
+
+            robust_test_return = np.nan
+
+        else:
+
+            robust_test_return = (
+                robust_evaluation[
+                    "portfolio_value"
+                ].iloc[-1]
+                /
+                robust_evaluation[
+                    "portfolio_value"
+                ].iloc[0]
+                - 1
+            )
+
+        # =====================================================
+        # 8. DOW RETURN
         # =====================================================
 
         index_col = "INDEX"
@@ -339,7 +435,7 @@ def run_single_walk_forward(
             index_return = np.nan
 
         # =====================================================
-        # 5. STORE WALK-FORWARD RESULT
+        # 9. STORE WALK-FORWARD RESULT
         # =====================================================
 
         results.append({
@@ -371,72 +467,170 @@ def run_single_walk_forward(
             "test_end":
                 test_end,
 
-            # -------------------------------------------------
-            # Selected thresholds
-            # -------------------------------------------------
+            # =================================================
+            # BEST PARAMETERS
+            # =================================================
 
             "best_buy_thr":
-                buy_thr,
+                best_buy_thr,
 
             "best_sell_thr":
-                sell_thr,
+                best_sell_thr,
 
             # -------------------------------------------------
-            # Calibration statistics
+            # Best calibration statistics
             # -------------------------------------------------
 
-            "calibration_total_return":
+            "best_calibration_total_return":
                 optimization[
                     "total_return"
                 ],
 
-            "calibration_mu":
+            "best_calibration_mu":
                 optimization[
                     "mu"
                 ],
 
-            "calibration_sigma":
+            "best_calibration_sigma":
                 optimization[
                     "sigma"
                 ],
 
-            "calibration_sharpe":
+            "best_calibration_sharpe":
                 optimization[
                     "sharpe"
                 ],
 
-            "calibration_max_drawdown":
+            "best_calibration_max_drawdown":
                 optimization[
                     "max_drawdown"
                 ],
 
-            "calibration_calmar":
+            "best_calibration_calmar":
                 optimization[
                     "calmar"
                 ],
 
             # -------------------------------------------------
-            # Keep old mu_sigma name for compatibility
+            # Best out-of-sample return
+            # -------------------------------------------------
+
+            "best_portfolio_return":
+                best_test_return,
+
+            # =================================================
+            # ROBUST TOP-10% PARAMETERS
+            # =================================================
+
+            "robust_buy_thr":
+                robust_buy_thr,
+
+            "robust_sell_thr":
+                robust_sell_thr,
+
+            # -------------------------------------------------
+            # Top-10% information
+            # -------------------------------------------------
+
+            "top10_n":
+                optimization[
+                    "top10_n"
+                ],
+
+            "top10_mean_sharpe":
+                optimization[
+                    "top10_mean_sharpe"
+                ],
+
+            "top10_median_sharpe":
+                optimization[
+                    "top10_median_sharpe"
+                ],
+
+            "top10_mean_return":
+                optimization[
+                    "top10_mean_return"
+                ],
+
+            "top10_median_return":
+                optimization[
+                    "top10_median_return"
+                ],
+
+            "top10_mean_drawdown":
+                optimization[
+                    "top10_mean_drawdown"
+                ],
+
+            "top10_median_drawdown":
+                optimization[
+                    "top10_median_drawdown"
+                ],
+
+            "top10_mean_calmar":
+                optimization[
+                    "top10_mean_calmar"
+                ],
+
+            "top10_median_calmar":
+                optimization[
+                    "top10_median_calmar"
+                ],
+
+            # -------------------------------------------------
+            # Robust out-of-sample return
+            # -------------------------------------------------
+
+            "robust_portfolio_return":
+                robust_test_return,
+
+            # =================================================
+            # INDEX
+            # =================================================
+
+            "index_return":
+                index_return,
+
+            # =================================================
+            # DIFFERENCE VS INDEX
+            # =================================================
+
+            "best_excess_return":
+                (
+                    best_test_return -
+                    index_return
+                    if (
+                        not np.isnan(best_test_return)
+                        and
+                        not np.isnan(index_return)
+                    )
+                    else np.nan
+                ),
+
+            "robust_excess_return":
+                (
+                    robust_test_return -
+                    index_return
+                    if (
+                        not np.isnan(robust_test_return)
+                        and
+                        not np.isnan(index_return)
+                    )
+                    else np.nan
+                ),
+
+            # -------------------------------------------------
+            # Compatibility
             # -------------------------------------------------
 
             "mu_sigma":
                 optimization[
                     "sharpe"
-                ],
-
-            # -------------------------------------------------
-            # Out-of-sample results
-            # -------------------------------------------------
-
-            "portfolio_return":
-                test_return,
-
-            "index_return":
-                index_return
+                ]
         })
 
         # =====================================================
-        # 6. PROGRESS
+        # 10. PROGRESS
         # =====================================================
 
         window_elapsed = (
@@ -476,18 +670,23 @@ def run_single_walk_forward(
             f"{100 * completed_fraction:5.1f}% | "
             f"test={test_start.date()} -> "
             f"{test_end.date()} | "
-            f"buy={buy_thr:+.2f} | "
-            f"sell={sell_thr:+.2f} | "
+            f"BEST="
+            f"({best_buy_thr:+.2f},"
+            f"{best_sell_thr:+.2f}) | "
+            f"ROBUST="
+            f"({robust_buy_thr:+.2f},"
+            f"{robust_sell_thr:+.2f}) | "
             f"Sharpe={optimization['sharpe']:.3f} | "
-            f"Calmar={optimization['calmar']:.3f} | "
-            f"test_ret={test_return:+.2%} | "
-            f"window_time={window_elapsed:.1f}s | "
+            f"Best OOS={best_test_return:+.2%} | "
+            f"Robust OOS={robust_test_return:+.2%} | "
+            f"Index={index_return:+.2%} | "
+            f"time={window_elapsed:.1f}s | "
             f"ETA={eta_minutes:.1f}min",
             flush=True
         )
 
         # =====================================================
-        # 7. MOVE WALK-FORWARD WINDOW
+        # 11. MOVE WALK-FORWARD WINDOW
         # =====================================================
 
         test_start += pd.DateOffset(
