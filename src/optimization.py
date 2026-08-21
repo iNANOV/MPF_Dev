@@ -4,29 +4,273 @@ import pandas as pd
 from .strategy import run_strategy
 
 
+# ============================================================
+# MU / SIGMA / SHARPE
+# ============================================================
+
 def calculate_mu_sigma(portfolio):
     """
-    Calculate annualized mean and standard deviation
+    Calculate annualized mean, volatility and Sharpe ratio
     from daily portfolio returns.
+
+    Kept for compatibility with existing code.
     """
 
-    returns = portfolio["return"].diff().dropna()
+    if portfolio is None or portfolio.empty:
+        return np.nan, np.nan, np.nan
+
+    if "return" not in portfolio.columns:
+        return np.nan, np.nan, np.nan
+
+    returns = (
+        portfolio["return"]
+        .diff()
+        .dropna()
+    )
 
     if len(returns) < 2:
         return np.nan, np.nan, np.nan
 
     mu = returns.mean() * 252
-    sigma = returns.std() * np.sqrt(252)
+
+    sigma = (
+        returns.std()
+        * np.sqrt(252)
+    )
 
     if sigma == 0 or np.isnan(sigma):
         sharpe = np.nan
     else:
         sharpe = mu / sigma
 
-    return mu, sigma, sharpe
+    return (
+        mu,
+        sigma,
+        sharpe
+    )
 
 
-def generate_thresholds(strategy, step=0.01):
+# ============================================================
+# PORTFOLIO STATISTICS
+# ============================================================
+
+def calculate_portfolio_statistics(portfolio):
+    """
+    Calculate performance statistics from daily
+    portfolio values.
+
+    Returns:
+        total_return
+        mu
+        sigma
+        sharpe
+        max_drawdown
+        calmar
+    """
+
+    if portfolio is None or portfolio.empty:
+
+        return {
+            "total_return": np.nan,
+            "mu": np.nan,
+            "sigma": np.nan,
+            "sharpe": np.nan,
+            "max_drawdown": np.nan,
+            "calmar": np.nan
+        }
+
+    if "portfolio_value" not in portfolio.columns:
+
+        return {
+            "total_return": np.nan,
+            "mu": np.nan,
+            "sigma": np.nan,
+            "sharpe": np.nan,
+            "max_drawdown": np.nan,
+            "calmar": np.nan
+        }
+
+    values = (
+        portfolio["portfolio_value"]
+        .dropna()
+    )
+
+    if len(values) < 2:
+
+        return {
+            "total_return": np.nan,
+            "mu": np.nan,
+            "sigma": np.nan,
+            "sharpe": np.nan,
+            "max_drawdown": np.nan,
+            "calmar": np.nan
+        }
+
+    # --------------------------------------------------------
+    # Total return
+    # --------------------------------------------------------
+
+    total_return = (
+        values.iloc[-1]
+        /
+        values.iloc[0]
+        - 1
+    )
+
+    # --------------------------------------------------------
+    # Daily returns
+    # --------------------------------------------------------
+
+    daily_returns = (
+        values
+        .pct_change()
+        .dropna()
+    )
+
+    if len(daily_returns) < 2:
+
+        return {
+            "total_return": total_return,
+            "mu": np.nan,
+            "sigma": np.nan,
+            "sharpe": np.nan,
+            "max_drawdown": np.nan,
+            "calmar": np.nan
+        }
+
+    # --------------------------------------------------------
+    # Annualized return
+    # --------------------------------------------------------
+
+    mu = (
+        daily_returns.mean()
+        * 252
+    )
+
+    # --------------------------------------------------------
+    # Annualized volatility
+    # --------------------------------------------------------
+
+    sigma = (
+        daily_returns.std()
+        * np.sqrt(252)
+    )
+
+    # --------------------------------------------------------
+    # Sharpe ratio
+    # --------------------------------------------------------
+
+    if (
+        sigma == 0
+        or np.isnan(sigma)
+    ):
+
+        sharpe = np.nan
+
+    else:
+
+        sharpe = mu / sigma
+
+    # --------------------------------------------------------
+    # Maximum drawdown
+    # --------------------------------------------------------
+
+    running_max = values.cummax()
+
+    drawdown = (
+        values / running_max
+        - 1
+    )
+
+    max_drawdown = drawdown.min()
+
+    # --------------------------------------------------------
+    # Annualized return for Calmar
+    # --------------------------------------------------------
+
+    try:
+
+        start_date = values.index[0]
+        end_date = values.index[-1]
+
+        days = (
+            end_date - start_date
+        ).days
+
+        years = days / 365.25
+
+    except Exception:
+
+        years = np.nan
+
+    if (
+        not np.isnan(years)
+        and years > 0
+    ):
+
+        annualized_return = (
+            values.iloc[-1]
+            /
+            values.iloc[0]
+        ) ** (1 / years) - 1
+
+    else:
+
+        annualized_return = np.nan
+
+    # --------------------------------------------------------
+    # Calmar ratio
+    # --------------------------------------------------------
+
+    if (
+        max_drawdown == 0
+        or np.isnan(max_drawdown)
+        or np.isnan(annualized_return)
+    ):
+
+        calmar = np.nan
+
+    else:
+
+        calmar = (
+            annualized_return
+            /
+            abs(max_drawdown)
+        )
+
+    # --------------------------------------------------------
+    # Return
+    # --------------------------------------------------------
+
+    return {
+        "total_return":
+            total_return,
+
+        "mu":
+            mu,
+
+        "sigma":
+            sigma,
+
+        "sharpe":
+            sharpe,
+
+        "max_drawdown":
+            max_drawdown,
+
+        "calmar":
+            calmar
+    }
+
+
+# ============================================================
+# THRESHOLD GENERATION
+# ============================================================
+
+def generate_thresholds(
+    strategy,
+    step=0.01
+):
     """
     Generate possible buy/sell thresholds.
 
@@ -51,35 +295,48 @@ def generate_thresholds(strategy, step=0.01):
     if strategy == "mean_reversion":
 
         buy_values = values[
-            (values >= -0.30) &
+            (values >= -0.30)
+            &
             (values <= 0)
         ]
 
         sell_values = values[
-            (values >= 0) &
+            (values >= 0)
+            &
             (values <= 0.30)
         ]
 
     elif strategy == "momentum":
 
         buy_values = values[
-            (values >= 0) &
+            (values >= 0)
+            &
             (values <= 0.30)
         ]
 
         sell_values = values[
-            (values >= -0.30) &
+            (values >= -0.30)
+            &
             (values <= 0)
         ]
 
     else:
+
         raise ValueError(
             "strategy must be "
-            "'mean_reversion' or 'momentum'"
+            "'mean_reversion' or "
+            "'momentum'"
         )
 
-    return buy_values, sell_values
+    return (
+        buy_values,
+        sell_values
+    )
 
+
+# ============================================================
+# MONTE-CARLO OPTIMIZATION
+# ============================================================
 
 def monte_carlo_optimize(
     data,
@@ -104,24 +361,46 @@ def monte_carlo_optimize(
     """
     Monte-Carlo optimization on historical calibration data.
 
-    Only information available up to calibration_end is used.
+    Only information available up to calibration_end
+    is used.
+
+    Every valid simulation stores:
+
+        buy_thr
+        sell_thr
+        total_return
+        mu
+        sigma
+        sharpe
+        max_drawdown
+        calmar
+
+    The current winner is selected by Sharpe ratio.
+
+    Additionally, the top 10% of simulations are stored
+    and their median thresholds are calculated as a
+    robust threshold candidate.
 
     progress_info:
-        Optional dictionary containing walk-forward progress
-        information. Example:
+        Optional dictionary containing:
 
         {
             "window": 1,
             "total_windows": 22
         }
-
-    Progress is printed periodically so that long-running
-    optimizations can be monitored.
     """
+
+    # ========================================================
+    # Random number generator
+    # ========================================================
 
     rng = np.random.default_rng(
         random_state
     )
+
+    # ========================================================
+    # Calibration data
+    # ========================================================
 
     calibration_data = data.loc[
         calibration_start:calibration_end
@@ -130,6 +409,10 @@ def monte_carlo_optimize(
     if calibration_data.empty:
         return None
 
+    # ========================================================
+    # Generate threshold ranges
+    # ========================================================
+
     buy_values, sell_values = generate_thresholds(
         strategy,
         step=threshold_step
@@ -137,9 +420,9 @@ def monte_carlo_optimize(
 
     results = []
 
-    # ---------------------------------------------------------
+    # ========================================================
     # Progress information
-    # ---------------------------------------------------------
+    # ========================================================
 
     if progress_info is not None:
 
@@ -158,14 +441,18 @@ def monte_carlo_optimize(
         window = "?"
         total_windows = "?"
 
-    # ---------------------------------------------------------
+    # ========================================================
     # Monte-Carlo simulations
-    # ---------------------------------------------------------
+    # ========================================================
 
     for simulation in range(
         1,
         n_simulations + 1
     ):
+
+        # ----------------------------------------------------
+        # Random threshold combination
+        # ----------------------------------------------------
 
         buy_thr = float(
             rng.choice(
@@ -180,6 +467,10 @@ def monte_carlo_optimize(
         )
 
         try:
+
+            # ------------------------------------------------
+            # Run strategy
+            # ------------------------------------------------
 
             result = run_strategy(
                 data=calibration_data,
@@ -211,40 +502,68 @@ def monte_carlo_optimize(
                 "portfolio"
             ]
 
-            mu, sigma, sharpe = (
-                calculate_mu_sigma(
-                    portfolio
-                )
+            # ------------------------------------------------
+            # Calculate statistics
+            # ------------------------------------------------
+
+            stats = calculate_portfolio_statistics(
+                portfolio
             )
 
-            if np.isnan(sharpe):
+            # ------------------------------------------------
+            # Skip invalid simulations
+            # ------------------------------------------------
+
+            if np.isnan(
+                stats["sharpe"]
+            ):
+
                 continue
+
+            # ------------------------------------------------
+            # Store simulation
+            # ------------------------------------------------
 
             results.append(
                 {
-                    "buy_thr": buy_thr,
-                    "sell_thr": sell_thr,
-                    "mu": mu,
-                    "sigma": sigma,
-                    "mu_sigma": sharpe
+                    "buy_thr":
+                        buy_thr,
+
+                    "sell_thr":
+                        sell_thr,
+
+                    "total_return":
+                        stats["total_return"],
+
+                    "mu":
+                        stats["mu"],
+
+                    "sigma":
+                        stats["sigma"],
+
+                    "sharpe":
+                        stats["sharpe"],
+
+                    "max_drawdown":
+                        stats["max_drawdown"],
+
+                    "calmar":
+                        stats["calmar"]
                 }
             )
 
         except Exception:
+
             continue
 
-        # -----------------------------------------------------
-        # Progress output
-        #
-        # Print every 10 simulations and at the end.
-        # -----------------------------------------------------
+        # ====================================================
+        # Progress
+        # ====================================================
 
         if (
             simulation == 1
-            or
-            simulation % 10 == 0
-            or
-            simulation == n_simulations
+            or simulation % 10 == 0
+            or simulation == n_simulations
         ):
 
             print(
@@ -256,46 +575,207 @@ def monte_carlo_optimize(
                 flush=True
             )
 
-    # ---------------------------------------------------------
+    # ========================================================
     # No valid results
-    # ---------------------------------------------------------
+    # ========================================================
 
     if not results:
-
         return None
+
+    # ========================================================
+    # Results DataFrame
+    # ========================================================
 
     results_df = pd.DataFrame(
         results
     )
 
-    # ---------------------------------------------------------
-    # Best parameter combination
-    # ---------------------------------------------------------
+    # ========================================================
+    # Single best simulation
+    # ========================================================
 
     best = results_df.loc[
-        results_df["mu_sigma"].idxmax()
+        results_df["sharpe"].idxmax()
     ].copy()
 
+    # ========================================================
+    # TOP 10%
+    # ========================================================
+
+    top_n = max(
+        1,
+        int(
+            np.ceil(
+                len(results_df) * 0.10
+            )
+        )
+    )
+
+    top10_results = (
+        results_df
+        .sort_values(
+            "sharpe",
+            ascending=False
+        )
+        .head(top_n)
+        .copy()
+    )
+
+    # ========================================================
+    # Robust thresholds
+    # ========================================================
+
+    robust_buy_thr = (
+        top10_results["buy_thr"]
+        .median()
+    )
+
+    robust_sell_thr = (
+        top10_results["sell_thr"]
+        .median()
+    )
+
+    # ========================================================
+    # Top 10% statistics
+    # ========================================================
+
+    top10_mean_sharpe = (
+        top10_results["sharpe"]
+        .mean()
+    )
+
+    top10_median_sharpe = (
+        top10_results["sharpe"]
+        .median()
+    )
+
+    top10_mean_return = (
+        top10_results["total_return"]
+        .mean()
+    )
+
+    top10_median_return = (
+        top10_results["total_return"]
+        .median()
+    )
+
+    top10_mean_drawdown = (
+        top10_results["max_drawdown"]
+        .mean()
+    )
+
+    top10_median_drawdown = (
+        top10_results["max_drawdown"]
+        .median()
+    )
+
+    top10_mean_calmar = (
+        top10_results["calmar"]
+        .mean()
+    )
+
+    top10_median_calmar = (
+        top10_results["calmar"]
+        .median()
+    )
+
+    # ========================================================
+    # Return
+    # ========================================================
+
     return {
-        "best_buy_thr": best[
-            "buy_thr"
-        ],
 
-        "best_sell_thr": best[
-            "sell_thr"
-        ],
+        # ----------------------------------------------------
+        # Single best simulation
+        # ----------------------------------------------------
 
-        "mu": best[
-            "mu"
-        ],
+        "best_buy_thr":
+            best["buy_thr"],
 
-        "sigma": best[
-            "sigma"
-        ],
+        "best_sell_thr":
+            best["sell_thr"],
 
-        "mu_sigma": best[
-            "mu_sigma"
-        ],
+        "best_sharpe":
+            best["sharpe"],
 
-        "all_results": results_df
+        # ----------------------------------------------------
+        # Robust top-10% thresholds
+        # ----------------------------------------------------
+
+        "robust_buy_thr":
+            robust_buy_thr,
+
+        "robust_sell_thr":
+            robust_sell_thr,
+
+        # ----------------------------------------------------
+        # Top-10% information
+        # ----------------------------------------------------
+
+        "top10_n":
+            top_n,
+
+        "top10_mean_sharpe":
+            top10_mean_sharpe,
+
+        "top10_median_sharpe":
+            top10_median_sharpe,
+
+        "top10_mean_return":
+            top10_mean_return,
+
+        "top10_median_return":
+            top10_median_return,
+
+        "top10_mean_drawdown":
+            top10_mean_drawdown,
+
+        "top10_median_drawdown":
+            top10_median_drawdown,
+
+        "top10_mean_calmar":
+            top10_mean_calmar,
+
+        "top10_median_calmar":
+            top10_median_calmar,
+
+        # ----------------------------------------------------
+        # Best simulation statistics
+        # ----------------------------------------------------
+
+        "mu":
+            best["mu"],
+
+        "sigma":
+            best["sigma"],
+
+        # Compatibility with existing walk_forward.py
+        "mu_sigma":
+            best["sharpe"],
+
+        "sharpe":
+            best["sharpe"],
+
+        "total_return":
+            best["total_return"],
+
+        "max_drawdown":
+            best["max_drawdown"],
+
+        "calmar":
+            best["calmar"],
+
+        # ----------------------------------------------------
+        # ALL valid simulations
+        # ----------------------------------------------------
+
+        "all_results":
+            results_df,
+
+        # ----------------------------------------------------
+        # TOP 10% simulations
+        # ----------------------------------------------------
+
+        "top10_results":
+            top10_results
     }

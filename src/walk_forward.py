@@ -30,10 +30,26 @@ def run_single_walk_forward(
     """
     Run walk-forward optimization for ONE max_num_components.
 
-    Progress is reported:
-        - during Monte-Carlo simulations
-        - after every completed walk-forward window
-        - with ETA information
+    For every walk-forward window:
+
+        1. Calibrate thresholds using Monte-Carlo.
+        2. Select the best threshold combination by Sharpe ratio.
+        3. Apply the selected thresholds to the following
+           out-of-sample test period.
+        4. Store calibration statistics.
+        5. Store out-of-sample portfolio and index returns.
+
+    Calibration statistics stored:
+
+        - total_return
+        - mu
+        - sigma
+        - sharpe
+        - max_drawdown
+        - calmar
+
+    Progress is reported after every completed
+    walk-forward window.
     """
 
     start_time = time.time()
@@ -45,20 +61,21 @@ def run_single_walk_forward(
     first_date = data.index.min()
     last_date = data.index.max()
 
-    # ---------------------------------------------------------
-    # First test period
-    # ---------------------------------------------------------
+    # =========================================================
+    # FIRST TEST DATE
+    # =========================================================
 
     test_start = (
         start_date +
         pd.DateOffset(years=window)
     )
 
-    # ---------------------------------------------------------
-    # Determine total number of walk-forward windows
-    # ---------------------------------------------------------
+    # =========================================================
+    # DETERMINE NUMBER OF WINDOWS
+    # =========================================================
 
     temp_date = test_start
+
     total_windows = 0
 
     while temp_date <= last_date:
@@ -112,7 +129,6 @@ def run_single_walk_forward(
         )
 
         if test_end > last_date:
-
             test_end = last_date
 
         # =====================================================
@@ -166,12 +182,6 @@ def run_single_walk_forward(
                 min_cash_in_percent
             ),
 
-            # -------------------------------------------------
-            # IMPORTANT:
-            # Tell optimization.py which WF window
-            # is currently running.
-            # -------------------------------------------------
-
             progress_info={
                 "window": iteration,
                 "total_windows": total_windows
@@ -179,7 +189,7 @@ def run_single_walk_forward(
         )
 
         # =====================================================
-        # NO OPTIMIZATION RESULT
+        # NO VALID OPTIMIZATION RESULT
         # =====================================================
 
         if optimization is None:
@@ -207,9 +217,9 @@ def run_single_walk_forward(
 
             continue
 
-        # -----------------------------------------------------
-        # Selected thresholds
-        # -----------------------------------------------------
+        # =====================================================
+        # BEST THRESHOLDS
+        # =====================================================
 
         buy_thr = optimization[
             "best_buy_thr"
@@ -220,13 +230,14 @@ def run_single_walk_forward(
         ]
 
         # =====================================================
-        # 2. APPLY SELECTED PARAMETERS TO TEST DATA
+        # 2. OUT-OF-SAMPLE TEST
         # =====================================================
 
         # IMPORTANT:
         #
-        # Use data beyond test_end so that trades that are
-        # opened during the test period can finish naturally.
+        # We start at test_start and allow the strategy to
+        # continue beyond test_end so that open positions
+        # can naturally close.
         #
 
         test_data = data.loc[
@@ -279,7 +290,7 @@ def run_single_walk_forward(
         ]
 
         # =====================================================
-        # 3. TEST-PERIOD PERFORMANCE
+        # 3. OUT-OF-SAMPLE PORTFOLIO RETURN
         # =====================================================
 
         evaluation = portfolio.loc[
@@ -300,12 +311,11 @@ def run_single_walk_forward(
                 evaluation[
                     "portfolio_value"
                 ].iloc[0]
-                -
-                1
+                - 1
             )
 
         # =====================================================
-        # 4. DOW / INDEX RETURN
+        # 4. DOW RETURN
         # =====================================================
 
         index_col = "INDEX"
@@ -321,8 +331,7 @@ def run_single_walk_forward(
                 index_prices.iloc[-1]
                 /
                 index_prices.iloc[0]
-                -
-                1
+                - 1
             )
 
         else:
@@ -330,13 +339,21 @@ def run_single_walk_forward(
             index_return = np.nan
 
         # =====================================================
-        # 5. STORE RESULT
+        # 5. STORE WALK-FORWARD RESULT
         # =====================================================
 
         results.append({
 
+            # -------------------------------------------------
+            # Configuration
+            # -------------------------------------------------
+
             "max_num_components":
                 max_num_components,
+
+            # -------------------------------------------------
+            # Calibration period
+            # -------------------------------------------------
 
             "calibration_start":
                 calibration_start,
@@ -344,11 +361,19 @@ def run_single_walk_forward(
             "calibration_end":
                 calibration_end,
 
+            # -------------------------------------------------
+            # Test period
+            # -------------------------------------------------
+
             "test_start":
                 test_start,
 
             "test_end":
                 test_end,
+
+            # -------------------------------------------------
+            # Selected thresholds
+            # -------------------------------------------------
 
             "best_buy_thr":
                 buy_thr,
@@ -356,14 +381,52 @@ def run_single_walk_forward(
             "best_sell_thr":
                 sell_thr,
 
-            "mu":
-                optimization["mu"],
+            # -------------------------------------------------
+            # Calibration statistics
+            # -------------------------------------------------
 
-            "sigma":
-                optimization["sigma"],
+            "calibration_total_return":
+                optimization[
+                    "total_return"
+                ],
+
+            "calibration_mu":
+                optimization[
+                    "mu"
+                ],
+
+            "calibration_sigma":
+                optimization[
+                    "sigma"
+                ],
+
+            "calibration_sharpe":
+                optimization[
+                    "sharpe"
+                ],
+
+            "calibration_max_drawdown":
+                optimization[
+                    "max_drawdown"
+                ],
+
+            "calibration_calmar":
+                optimization[
+                    "calmar"
+                ],
+
+            # -------------------------------------------------
+            # Keep old mu_sigma name for compatibility
+            # -------------------------------------------------
 
             "mu_sigma":
-                optimization["mu_sigma"],
+                optimization[
+                    "sharpe"
+                ],
+
+            # -------------------------------------------------
+            # Out-of-sample results
+            # -------------------------------------------------
 
             "portfolio_return":
                 test_return,
@@ -373,7 +436,7 @@ def run_single_walk_forward(
         })
 
         # =====================================================
-        # 6. PROGRESS / ETA
+        # 6. PROGRESS
         # =====================================================
 
         window_elapsed = (
@@ -390,8 +453,6 @@ def run_single_walk_forward(
             iteration /
             total_windows
         )
-
-        # Estimate total runtime based on completed windows
 
         estimated_total = (
             total_elapsed /
@@ -417,7 +478,8 @@ def run_single_walk_forward(
             f"{test_end.date()} | "
             f"buy={buy_thr:+.2f} | "
             f"sell={sell_thr:+.2f} | "
-            f"Sharpe={optimization['mu_sigma']:.3f} | "
+            f"Sharpe={optimization['sharpe']:.3f} | "
+            f"Calmar={optimization['calmar']:.3f} | "
             f"test_ret={test_return:+.2%} | "
             f"window_time={window_elapsed:.1f}s | "
             f"ETA={eta_minutes:.1f}min",
@@ -425,7 +487,7 @@ def run_single_walk_forward(
         )
 
         # =====================================================
-        # 7. MOVE TO NEXT WALK-FORWARD WINDOW
+        # 7. MOVE WALK-FORWARD WINDOW
         # =====================================================
 
         test_start += pd.DateOffset(
