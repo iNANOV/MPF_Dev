@@ -59,19 +59,19 @@ START_DATE = "2010-01-01"
 # First optimization:
 # historical data -> 2014-01-01
 #
-CALIBRATION_WINDOW = 4
+CALIBRATION_WINDOW = 6
 
 
 # How far the test window moves forward.
 #
 # 6 means move forward by 6 months.
-MOVING_PARAM = 6
+MOVING_PARAM = 12
 
 
 # Length of each out-of-sample test period.
 #
 # 6 means each test period is 6 months.
-TEST_SPAN = 6
+TEST_SPAN = 12
 
 
 # ============================================================

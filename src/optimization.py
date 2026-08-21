@@ -28,19 +28,23 @@ def calculate_mu_sigma(portfolio):
 
 def generate_thresholds(strategy, step=0.01):
     """
-    Generate all possible buy/sell thresholds.
+    Generate possible buy/sell thresholds.
 
     Mean reversion:
-        buy  = [0, -0.3]
-        sell = [0,  0.3]
+        buy  = [-0.30, 0]
+        sell = [0, 0.30]
 
     Momentum:
-        buy  = [0,  0.3]
-        sell = [0, -0.3]
+        buy  = [0, 0.30]
+        sell = [-0.30, 0]
     """
 
     values = np.round(
-        np.arange(-0.30, 0.30 + step / 2, step),
+        np.arange(
+            -0.30,
+            0.30 + step / 2,
+            step
+        ),
         2
     )
 
@@ -70,7 +74,8 @@ def generate_thresholds(strategy, step=0.01):
 
     else:
         raise ValueError(
-            "strategy must be 'mean_reversion' or 'momentum'"
+            "strategy must be "
+            "'mean_reversion' or 'momentum'"
         )
 
     return buy_values, sell_values
@@ -93,15 +98,30 @@ def monte_carlo_optimize(
     abs_cost_for_a_trade=5,
     percent_cost_for_a_trade=0.001,
     max_investment_size_in_percent=50,
-    min_cash_in_percent=10
+    min_cash_in_percent=10,
+    progress_info=None
 ):
     """
     Monte-Carlo optimization on historical calibration data.
 
     Only information available up to calibration_end is used.
+
+    progress_info:
+        Optional dictionary containing walk-forward progress
+        information. Example:
+
+        {
+            "window": 1,
+            "total_windows": 22
+        }
+
+    Progress is printed periodically so that long-running
+    optimizations can be monitored.
     """
 
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(
+        random_state
+    )
 
     calibration_data = data.loc[
         calibration_start:calibration_end
@@ -117,10 +137,47 @@ def monte_carlo_optimize(
 
     results = []
 
-    for _ in range(n_simulations):
+    # ---------------------------------------------------------
+    # Progress information
+    # ---------------------------------------------------------
 
-        buy_thr = float(rng.choice(buy_values))
-        sell_thr = float(rng.choice(sell_values))
+    if progress_info is not None:
+
+        window = progress_info.get(
+            "window",
+            "?"
+        )
+
+        total_windows = progress_info.get(
+            "total_windows",
+            "?"
+        )
+
+    else:
+
+        window = "?"
+        total_windows = "?"
+
+    # ---------------------------------------------------------
+    # Monte-Carlo simulations
+    # ---------------------------------------------------------
+
+    for simulation in range(
+        1,
+        n_simulations + 1
+    ):
+
+        buy_thr = float(
+            rng.choice(
+                buy_values
+            )
+        )
+
+        sell_thr = float(
+            rng.choice(
+                sell_values
+            )
+        )
 
         try:
 
@@ -136,47 +193,109 @@ def monte_carlo_optimize(
                 start_date=calibration_start,
                 ranking_column=ranking_column,
                 initial_capital=initial_capital,
-                abs_cost_for_a_trade=abs_cost_for_a_trade,
-                percent_cost_for_a_trade=percent_cost_for_a_trade,
-                max_investment_size_in_percent=max_investment_size_in_percent,
-                min_cash_in_percent=min_cash_in_percent
+                abs_cost_for_a_trade=(
+                    abs_cost_for_a_trade
+                ),
+                percent_cost_for_a_trade=(
+                    percent_cost_for_a_trade
+                ),
+                max_investment_size_in_percent=(
+                    max_investment_size_in_percent
+                ),
+                min_cash_in_percent=(
+                    min_cash_in_percent
+                )
             )
 
-            portfolio = result["portfolio"]
+            portfolio = result[
+                "portfolio"
+            ]
 
-            mu, sigma, sharpe = calculate_mu_sigma(
-                portfolio
+            mu, sigma, sharpe = (
+                calculate_mu_sigma(
+                    portfolio
+                )
             )
 
             if np.isnan(sharpe):
                 continue
 
-            results.append({
-                "buy_thr": buy_thr,
-                "sell_thr": sell_thr,
-                "mu": mu,
-                "sigma": sigma,
-                "mu_sigma": sharpe
-            })
+            results.append(
+                {
+                    "buy_thr": buy_thr,
+                    "sell_thr": sell_thr,
+                    "mu": mu,
+                    "sigma": sigma,
+                    "mu_sigma": sharpe
+                }
+            )
 
         except Exception:
             continue
 
+        # -----------------------------------------------------
+        # Progress output
+        #
+        # Print every 10 simulations and at the end.
+        # -----------------------------------------------------
+
+        if (
+            simulation == 1
+            or
+            simulation % 10 == 0
+            or
+            simulation == n_simulations
+        ):
+
+            print(
+                f"[MC] "
+                f"components={max_num_components} | "
+                f"window={window}/{total_windows} | "
+                f"simulation={simulation}/{n_simulations} | "
+                f"valid={len(results)}",
+                flush=True
+            )
+
+    # ---------------------------------------------------------
+    # No valid results
+    # ---------------------------------------------------------
+
     if not results:
+
         return None
 
-    results_df = pd.DataFrame(results)
+    results_df = pd.DataFrame(
+        results
+    )
 
+    # ---------------------------------------------------------
     # Best parameter combination
+    # ---------------------------------------------------------
+
     best = results_df.loc[
         results_df["mu_sigma"].idxmax()
     ].copy()
 
     return {
-        "best_buy_thr": best["buy_thr"],
-        "best_sell_thr": best["sell_thr"],
-        "mu": best["mu"],
-        "sigma": best["sigma"],
-        "mu_sigma": best["mu_sigma"],
+        "best_buy_thr": best[
+            "buy_thr"
+        ],
+
+        "best_sell_thr": best[
+            "sell_thr"
+        ],
+
+        "mu": best[
+            "mu"
+        ],
+
+        "sigma": best[
+            "sigma"
+        ],
+
+        "mu_sigma": best[
+            "mu_sigma"
+        ],
+
         "all_results": results_df
     }

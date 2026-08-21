@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import time
 
 from .optimization import monte_carlo_optimize
 from .strategy import run_strategy
@@ -29,23 +30,13 @@ def run_single_walk_forward(
     """
     Run walk-forward optimization for ONE max_num_components.
 
-    Workflow
-    --------
-    1. Everything before the first test period is calibration data.
-    2. Monte-Carlo optimization is performed on all data available
-       before the test period.
-    3. The selected thresholds are applied to the following test period.
-    4. Trades are allowed to continue beyond test_end so that open
-       trades can finish naturally.
-    5. Portfolio performance is evaluated only inside the test period.
-    6. The index return is calculated using the first and last
-       available trading day inside the test period.
-    7. The walk-forward window is then moved by moving_param months.
+    Progress is reported:
+        - during Monte-Carlo simulations
+        - after every completed walk-forward window
+        - with ETA information
     """
 
-    # --------------------------------------------------
-    # 0. Prepare data
-    # --------------------------------------------------
+    start_time = time.time()
 
     start_date = pd.Timestamp(start_date)
 
@@ -54,30 +45,55 @@ def run_single_walk_forward(
     first_date = data.index.min()
     last_date = data.index.max()
 
-    # First test period starts after the initial calibration window
+    # ---------------------------------------------------------
+    # First test period
+    # ---------------------------------------------------------
+
     test_start = (
         start_date +
         pd.DateOffset(years=window)
+    )
+
+    # ---------------------------------------------------------
+    # Determine total number of walk-forward windows
+    # ---------------------------------------------------------
+
+    temp_date = test_start
+    total_windows = 0
+
+    while temp_date <= last_date:
+
+        total_windows += 1
+
+        temp_date += pd.DateOffset(
+            months=moving_param
+        )
+
+    print(
+        f"[WF START] "
+        f"components={max_num_components} | "
+        f"windows={total_windows} | "
+        f"MC/window={n_simulations}",
+        flush=True
     )
 
     results = []
 
     iteration = 0
 
-    # ==================================================
+    # =========================================================
     # WALK-FORWARD LOOP
-    # ==================================================
+    # =========================================================
 
     while test_start <= last_date:
 
         iteration += 1
 
-        # --------------------------------------------------
-        # 1. Calibration period
-        #
-        # Everything before test_start is available for
-        # calibration.
-        # --------------------------------------------------
+        window_start_time = time.time()
+
+        # -----------------------------------------------------
+        # Calibration period
+        # -----------------------------------------------------
 
         calibration_start = first_date
 
@@ -86,30 +102,33 @@ def run_single_walk_forward(
             pd.Timedelta(days=1)
         )
 
-        # --------------------------------------------------
-        # 2. Define test period
-        # --------------------------------------------------
+        # -----------------------------------------------------
+        # Test period
+        # -----------------------------------------------------
 
-        requested_test_end = (
+        test_end = (
             test_start +
             pd.DateOffset(months=test_span)
         )
 
-        test_end = min(
-            requested_test_end,
-            last_date
-        )
+        if test_end > last_date:
 
-        # --------------------------------------------------
-        # 3. Monte-Carlo calibration
-        # --------------------------------------------------
+            test_end = last_date
+
+        # =====================================================
+        # 1. MONTE-CARLO CALIBRATION
+        # =====================================================
 
         optimization = monte_carlo_optimize(
+
             data=data,
+
             components=components,
+
             membership=membership,
 
             calibration_start=calibration_start,
+
             calibration_end=calibration_end,
 
             max_num_components=max_num_components,
@@ -117,9 +136,11 @@ def run_single_walk_forward(
             strategy=strategy,
 
             ma_column=ma_column,
+
             ranking_column=ranking_column,
 
             n_simulations=n_simulations,
+
             threshold_step=threshold_step,
 
             random_state=(
@@ -143,14 +164,42 @@ def run_single_walk_forward(
 
             min_cash_in_percent=(
                 min_cash_in_percent
-            )
+            ),
+
+            # -------------------------------------------------
+            # IMPORTANT:
+            # Tell optimization.py which WF window
+            # is currently running.
+            # -------------------------------------------------
+
+            progress_info={
+                "window": iteration,
+                "total_windows": total_windows
+            }
         )
 
-        # --------------------------------------------------
-        # If calibration failed, move to next window
-        # --------------------------------------------------
+        # =====================================================
+        # NO OPTIMIZATION RESULT
+        # =====================================================
 
         if optimization is None:
+
+            window_elapsed = (
+                time.time() -
+                window_start_time
+            )
+
+            print(
+                f"[WF] "
+                f"components={max_num_components} | "
+                f"window={iteration}/{total_windows} | "
+                f"{100 * iteration / total_windows:5.1f}% | "
+                f"test={test_start.date()} -> "
+                f"{test_end.date()} | "
+                f"NO RESULT | "
+                f"time={window_elapsed:.1f}s",
+                flush=True
+            )
 
             test_start += pd.DateOffset(
                 months=moving_param
@@ -158,9 +207,9 @@ def run_single_walk_forward(
 
             continue
 
-        # --------------------------------------------------
-        # Selected optimal thresholds
-        # --------------------------------------------------
+        # -----------------------------------------------------
+        # Selected thresholds
+        # -----------------------------------------------------
 
         buy_thr = optimization[
             "best_buy_thr"
@@ -170,27 +219,22 @@ def run_single_walk_forward(
             "best_sell_thr"
         ]
 
-        # ==================================================
-        # 4. APPLY OPTIMIZED STRATEGY
-        # ==================================================
-        #
+        # =====================================================
+        # 2. APPLY SELECTED PARAMETERS TO TEST DATA
+        # =====================================================
+
         # IMPORTANT:
         #
-        # We deliberately use ALL data from test_start
-        # onwards, not only until test_end.
+        # Use data beyond test_end so that trades that are
+        # opened during the test period can finish naturally.
         #
-        # This allows trades opened during the test period
-        # to finish after test_end.
-        #
-        # However, performance is evaluated only until
-        # test_end below.
-        # ==================================================
 
         test_data = data.loc[
             test_start:
         ].copy()
 
         result = run_strategy(
+
             data=test_data,
 
             components=components,
@@ -198,6 +242,7 @@ def run_single_walk_forward(
             ma_column=ma_column,
 
             buy_thr=buy_thr,
+
             sell_thr=sell_thr,
 
             strategy=strategy,
@@ -229,15 +274,17 @@ def run_single_walk_forward(
             )
         )
 
-        portfolio = result["portfolio"]
+        portfolio = result[
+            "portfolio"
+        ]
 
-        # ==================================================
-        # 5. PORTFOLIO RETURN
-        # ==================================================
+        # =====================================================
+        # 3. TEST-PERIOD PERFORMANCE
+        # =====================================================
 
         evaluation = portfolio.loc[
             test_start:test_end
-        ].copy()
+        ]
 
         if evaluation.empty:
 
@@ -245,53 +292,21 @@ def run_single_walk_forward(
 
         else:
 
-            first_value = (
-                evaluation[
-                    "portfolio_value"
-                ].iloc[0]
-            )
-
-            last_value = (
+            test_return = (
                 evaluation[
                     "portfolio_value"
                 ].iloc[-1]
+                /
+                evaluation[
+                    "portfolio_value"
+                ].iloc[0]
+                -
+                1
             )
 
-            if (
-                pd.notna(first_value)
-                and
-                first_value != 0
-                and
-                pd.notna(last_value)
-            ):
-
-                test_return = (
-                    last_value /
-                    first_value
-                    - 1
-                )
-
-            else:
-
-                test_return = np.nan
-
-        # ==================================================
-        # 6. INDEX RETURN
-        # ==================================================
-        #
-        # IMPORTANT:
-        #
-        # Do NOT require:
-        #
-        #     test_start in data.index
-        #     test_end   in data.index
-        #
-        # because these dates can be weekends or holidays.
-        #
-        # Instead, select all available observations between
-        # the requested test dates and use the first and last
-        # actual trading days.
-        # ==================================================
+        # =====================================================
+        # 4. DOW / INDEX RETURN
+        # =====================================================
 
         index_col = "INDEX"
 
@@ -303,18 +318,20 @@ def run_single_walk_forward(
         if len(index_prices) >= 2:
 
             index_return = (
-                index_prices.iloc[-1] /
+                index_prices.iloc[-1]
+                /
                 index_prices.iloc[0]
-                - 1
+                -
+                1
             )
 
         else:
 
             index_return = np.nan
 
-        # ==================================================
-        # 7. STORE RESULT
-        # ==================================================
+        # =====================================================
+        # 5. STORE RESULT
+        # =====================================================
 
         results.append({
 
@@ -355,16 +372,83 @@ def run_single_walk_forward(
                 index_return
         })
 
-        # ==================================================
-        # 8. MOVE WALK-FORWARD WINDOW
-        # ==================================================
+        # =====================================================
+        # 6. PROGRESS / ETA
+        # =====================================================
+
+        window_elapsed = (
+            time.time() -
+            window_start_time
+        )
+
+        total_elapsed = (
+            time.time() -
+            start_time
+        )
+
+        completed_fraction = (
+            iteration /
+            total_windows
+        )
+
+        # Estimate total runtime based on completed windows
+
+        estimated_total = (
+            total_elapsed /
+            iteration
+        ) * total_windows
+
+        eta_seconds = (
+            estimated_total -
+            total_elapsed
+        )
+
+        eta_minutes = max(
+            0,
+            eta_seconds / 60
+        )
+
+        print(
+            f"[WF] "
+            f"components={max_num_components} | "
+            f"window={iteration}/{total_windows} | "
+            f"{100 * completed_fraction:5.1f}% | "
+            f"test={test_start.date()} -> "
+            f"{test_end.date()} | "
+            f"buy={buy_thr:+.2f} | "
+            f"sell={sell_thr:+.2f} | "
+            f"Sharpe={optimization['mu_sigma']:.3f} | "
+            f"test_ret={test_return:+.2%} | "
+            f"window_time={window_elapsed:.1f}s | "
+            f"ETA={eta_minutes:.1f}min",
+            flush=True
+        )
+
+        # =====================================================
+        # 7. MOVE TO NEXT WALK-FORWARD WINDOW
+        # =====================================================
 
         test_start += pd.DateOffset(
             months=moving_param
         )
 
-    # ==================================================
-    # 9. RETURN RESULTS
-    # ==================================================
+    # =========================================================
+    # FINISHED
+    # =========================================================
 
-    return pd.DataFrame(results)
+    total_time = (
+        time.time() -
+        start_time
+    )
+
+    print(
+        f"[WF DONE] "
+        f"components={max_num_components} | "
+        f"windows={len(results)}/{total_windows} | "
+        f"time={total_time / 60:.2f} min",
+        flush=True
+    )
+
+    return pd.DataFrame(
+        results
+    )
