@@ -48,7 +48,6 @@ from config import (
 
     MIN_NUM_COMPONENTS,
     MAX_NUM_COMPONENTS,
-
     INITIAL_CAPITAL,
     ABS_COST_FOR_A_TRADE,
     PERCENT_COST_FOR_A_TRADE,
@@ -87,7 +86,9 @@ def run_worker(max_num_components):
         # Load data
         # ----------------------------------------------------
 
-        data = pd.read_parquet(DATA_FILE)
+        data = pd.read_parquet(
+            DATA_FILE
+        )
 
         membership = pd.read_csv(
             MEMBERSHIP_FILE,
@@ -156,7 +157,10 @@ def run_worker(max_num_components):
             )
         )
 
-        elapsed = time.time() - worker_start
+        elapsed = (
+            time.time()
+            - worker_start
+        )
 
         # ----------------------------------------------------
         # Check result
@@ -175,9 +179,13 @@ def run_worker(max_num_components):
             return None
 
         # Number of walk-forward windows
+
         try:
+
             n_windows = len(result)
+
         except TypeError:
+
             n_windows = 0
 
         print(
@@ -192,7 +200,10 @@ def run_worker(max_num_components):
 
     except Exception as error:
 
-        elapsed = time.time() - worker_start
+        elapsed = (
+            time.time()
+            - worker_start
+        )
 
         print(
             f"[ERROR] max_num_components="
@@ -202,7 +213,9 @@ def run_worker(max_num_components):
             flush=True
         )
 
-        # Re-raise so the main process knows this job failed
+        # Re-raise so the main process knows
+        # that this job failed.
+
         raise
 
 
@@ -214,7 +227,9 @@ def main():
 
     print()
     print("=" * 80)
-    print(" WALK-FORWARD MONTE-CARLO OPTIMIZATION")
+    print(
+        " WALK-FORWARD MONTE-CARLO OPTIMIZATION"
+    )
     print("=" * 80)
 
     # --------------------------------------------------------
@@ -232,7 +247,8 @@ def main():
     )
 
     print(
-        f"Start date           : {START_DATE}"
+        f"Start date           : "
+        f"{START_DATE}"
     )
 
     print(
@@ -276,6 +292,7 @@ def main():
     )
 
     print()
+
     print(
         f"Output file          : "
         f"{OUTPUT_FILE}"
@@ -291,7 +308,8 @@ def main():
     if not DATA_FILE.exists():
 
         raise FileNotFoundError(
-            f"Data file not found:\n{DATA_FILE}"
+            f"Data file not found:\n"
+            f"{DATA_FILE}"
         )
 
     if not MEMBERSHIP_FILE.exists():
@@ -305,7 +323,9 @@ def main():
     # Load data once for diagnostics
     # --------------------------------------------------------
 
-    data = pd.read_parquet(DATA_FILE)
+    data = pd.read_parquet(
+        DATA_FILE
+    )
 
     membership = pd.read_csv(
         MEMBERSHIP_FILE,
@@ -353,7 +373,9 @@ def main():
         )
     )
 
-    total_jobs = len(component_values)
+    total_jobs = len(
+        component_values
+    )
 
     print(
         f"Total optimization jobs : "
@@ -368,7 +390,9 @@ def main():
     print()
 
     print("=" * 80)
-    print(" STARTING PARALLEL OPTIMIZATION")
+    print(
+        " STARTING PARALLEL OPTIMIZATION"
+    )
     print("=" * 80)
     print()
 
@@ -387,20 +411,27 @@ def main():
     ) as executor:
 
         futures = {
+
             executor.submit(
                 run_worker,
                 n
             ): n
+
             for n in component_values
+
         }
 
         # ----------------------------------------------------
         # Process jobs as they finish
         # ----------------------------------------------------
 
-        for future in as_completed(futures):
+        for future in as_completed(
+            futures
+        ):
 
-            n = futures[future]
+            n = futures[
+                future
+            ]
 
             completed += 1
 
@@ -410,11 +441,18 @@ def main():
 
                 if result is not None:
 
-                    all_results.append(result)
+                    all_results.append(
+                        result
+                    )
 
                     try:
-                        n_windows = len(result)
+
+                        n_windows = len(
+                            result
+                        )
+
                     except TypeError:
+
                         n_windows = 0
 
                 else:
@@ -433,6 +471,7 @@ def main():
                 )
 
                 print()
+
                 print(
                     f"[PROGRESS] "
                     f"{completed}/{total_jobs} "
@@ -457,6 +496,7 @@ def main():
                 )
 
                 print()
+
                 print(
                     f"[FAILED] "
                     f"{completed}/{total_jobs} "
@@ -483,6 +523,7 @@ def main():
     # --------------------------------------------------------
 
     print()
+
     print(
         "Combining optimization results..."
     )
@@ -499,11 +540,13 @@ def main():
     sort_columns = []
 
     if "max_num_components" in results.columns:
+
         sort_columns.append(
             "max_num_components"
         )
 
     if "test_start" in results.columns:
+
         sort_columns.append(
             "test_start"
         )
@@ -512,12 +555,16 @@ def main():
 
         results = (
             results
-            .sort_values(sort_columns)
-            .reset_index(drop=True)
+            .sort_values(
+                sort_columns
+            )
+            .reset_index(
+                drop=True
+            )
         )
 
     # --------------------------------------------------------
-    # Create output directory if necessary
+    # Create output directory
     # --------------------------------------------------------
 
     OUTPUT_FILE.parent.mkdir(
@@ -544,8 +591,11 @@ def main():
     # --------------------------------------------------------
 
     print()
+
     print("=" * 80)
-    print(" OPTIMIZATION FINISHED")
+    print(
+        " OPTIMIZATION FINISHED"
+    )
     print("=" * 80)
 
     print(
