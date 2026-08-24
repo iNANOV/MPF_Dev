@@ -361,45 +361,42 @@ def monte_carlo_optimize(
     """
     Monte-Carlo optimization on historical calibration data.
 
+    One Monte-Carlo run evaluates the same threshold combinations
+    against four optimization criteria:
+
+        1. Sharpe
+        2. Calmar
+        3. Return / Risk
+        4. Robust top-10% Sharpe region
+
     Every valid simulation stores:
 
         buy_thr
         sell_thr
+
         total_return
         mu
         sigma
         sharpe
         max_drawdown
         calmar
+
         return_risk
 
-    Four optimization candidates are determined from the
-    SAME Monte-Carlo simulations:
+    The robust criterion is NOT a fourth independent simulation.
 
-        1. Sharpe
-        2. Calmar
-        3. Return / Risk
-        4. Robust top-10% region
+    Instead, the top 10% of simulations ranked by Sharpe are
+    treated as a robust performance region.
 
-    The robust candidate is based on the median thresholds
-    of the top 10% simulations ranked by Sharpe.
+    The median thresholds of that region are used as the
+    robust threshold candidate.
 
-    Additionally, statistics describing the top-10% threshold
-    region are returned:
-
-        top10_buy_std
-        top10_sell_std
-        top10_buy_min
-        top10_buy_max
-        top10_sell_min
-        top10_sell_max
-
-    No additional Monte-Carlo run is required for the
-    different optimization criteria.
+    Additional top-10% statistics describe the stability
+    and width of that region.
     """
 
     # ========================================================
-    # Random number generator
+    # RANDOM NUMBER GENERATOR
     # ========================================================
 
     rng = np.random.default_rng(
@@ -407,7 +404,7 @@ def monte_carlo_optimize(
     )
 
     # ========================================================
-    # Calibration data
+    # CALIBRATION DATA
     # ========================================================
 
     calibration_data = data.loc[
@@ -418,7 +415,7 @@ def monte_carlo_optimize(
         return None
 
     # ========================================================
-    # Generate threshold ranges
+    # THRESHOLD RANGE
     # ========================================================
 
     buy_values, sell_values = generate_thresholds(
@@ -429,7 +426,7 @@ def monte_carlo_optimize(
     results = []
 
     # ========================================================
-    # Progress information
+    # PROGRESS INFORMATION
     # ========================================================
 
     if progress_info is not None:
@@ -450,7 +447,7 @@ def monte_carlo_optimize(
         total_windows = "?"
 
     # ========================================================
-    # Monte-Carlo simulations
+    # MONTE-CARLO SIMULATIONS
     # ========================================================
 
     for simulation in range(
@@ -459,7 +456,7 @@ def monte_carlo_optimize(
     ):
 
         # ----------------------------------------------------
-        # Random threshold combination
+        # RANDOM THRESHOLD COMBINATION
         # ----------------------------------------------------
 
         buy_thr = float(
@@ -476,31 +473,46 @@ def monte_carlo_optimize(
 
         try:
 
-            # ------------------------------------------------
-            # Run strategy
-            # ------------------------------------------------
+            # =================================================
+            # RUN STRATEGY
+            # =================================================
 
             result = run_strategy(
+
                 data=calibration_data,
+
                 components=components,
+
                 ma_column=ma_column,
+
                 buy_thr=buy_thr,
+
                 sell_thr=sell_thr,
+
                 strategy=strategy,
+
                 membership=membership,
+
                 max_num_components=max_num_components,
+
                 start_date=calibration_start,
+
                 ranking_column=ranking_column,
+
                 initial_capital=initial_capital,
+
                 abs_cost_for_a_trade=(
                     abs_cost_for_a_trade
                 ),
+
                 percent_cost_for_a_trade=(
                     percent_cost_for_a_trade
                 ),
+
                 max_investment_size_in_percent=(
                     max_investment_size_in_percent
                 ),
+
                 min_cash_in_percent=(
                     min_cash_in_percent
                 )
@@ -510,72 +522,105 @@ def monte_carlo_optimize(
                 "portfolio"
             ]
 
-            # ------------------------------------------------
-            # Calculate statistics
-            # ------------------------------------------------
+            # =================================================
+            # PORTFOLIO STATISTICS
+            # =================================================
 
             stats = calculate_portfolio_statistics(
                 portfolio
             )
 
-            # ------------------------------------------------
-            # Extract statistics
-            # ------------------------------------------------
-
-            sharpe = stats[
-                "sharpe"
+            total_return = stats[
+                "total_return"
             ]
 
-            calmar = stats[
-                "calmar"
+            mu = stats[
+                "mu"
             ]
 
             sigma = stats[
                 "sigma"
             ]
 
-            total_return = stats[
-                "total_return"
+            sharpe = stats[
+                "sharpe"
             ]
 
-            # ------------------------------------------------
-            # Return / Risk
+            max_drawdown = stats[
+                "max_drawdown"
+            ]
+
+            calmar = stats[
+                "calmar"
+            ]
+
+            # =================================================
+            # CRITERION 1
+            # SHARPE
+            # =================================================
+
+            # Sharpe is already calculated as:
+
+            #     annualized return / annualized volatility
+
+            sharpe_score = sharpe
+
+            # =================================================
+            # CRITERION 2
+            # CALMAR
+            # =================================================
+
+            calmar_score = calmar
+
+            # =================================================
+            # CRITERION 3
+            # RETURN / RISK
+            # =================================================
+
+            # Here we deliberately use total return divided
+            # by annualized volatility.
             #
-            # Total return divided by annualized volatility.
-            # ------------------------------------------------
+            # This is different from Sharpe because:
+            #
+            #     Sharpe     = annualized return / volatility
+            #
+            #     ReturnRisk = total return / volatility
+            #
+            # This allows us to investigate whether a threshold
+            # combination produces a strong absolute return
+            # relative to the risk taken.
 
             if (
                 sigma is None
-                or
-                np.isnan(sigma)
-                or
-                sigma == 0
+                or np.isnan(sigma)
+                or sigma == 0
+                or total_return is None
+                or np.isnan(total_return)
             ):
 
-                return_risk = np.nan
+                return_risk_score = np.nan
 
             else:
 
-                return_risk = (
+                return_risk_score = (
                     total_return /
                     sigma
                 )
 
-            # ------------------------------------------------
-            # Skip invalid simulations
-            # ------------------------------------------------
+            # =================================================
+            # VALID SIMULATION
+            # =================================================
 
             if (
-                sharpe is None
-                or
-                np.isnan(sharpe)
+                sharpe_score is None
+                or np.isnan(sharpe_score)
             ):
 
                 continue
 
-            # ------------------------------------------------
-            # Store simulation
-            # ------------------------------------------------
+            # =================================================
+            # STORE SIMULATION
+            # =================================================
 
             results.append(
                 {
@@ -585,28 +630,34 @@ def monte_carlo_optimize(
                     "sell_thr":
                         sell_thr,
 
+                    # -----------------------------------------
+                    # Portfolio statistics
+                    # -----------------------------------------
+
                     "total_return":
                         total_return,
 
                     "mu":
-                        stats["mu"],
+                        mu,
 
                     "sigma":
                         sigma,
 
                     "sharpe":
-                        sharpe,
+                        sharpe_score,
 
                     "max_drawdown":
-                        stats[
-                            "max_drawdown"
-                        ],
+                        max_drawdown,
 
                     "calmar":
-                        calmar,
+                        calmar_score,
+
+                    # -----------------------------------------
+                    # Criterion 3
+                    # -----------------------------------------
 
                     "return_risk":
-                        return_risk
+                        return_risk_score
                 }
             )
 
@@ -615,7 +666,7 @@ def monte_carlo_optimize(
             continue
 
         # ====================================================
-        # Progress
+        # PROGRESS
         # ====================================================
 
         if (
@@ -636,14 +687,14 @@ def monte_carlo_optimize(
             )
 
     # ========================================================
-    # No valid results
+    # NO VALID RESULTS
     # ========================================================
 
     if not results:
         return None
 
     # ========================================================
-    # Results DataFrame
+    # RESULTS DATAFRAME
     # ========================================================
 
     results_df = pd.DataFrame(
@@ -651,15 +702,26 @@ def monte_carlo_optimize(
     )
 
     # ========================================================
-    # 1. BEST SHARPE
+    # CRITERION 1
+    # BEST SHARPE
     # ========================================================
 
-    best_sharpe = results_df.loc[
-        results_df["sharpe"].idxmax()
+    valid_sharpe = results_df[
+        results_df["sharpe"].notna()
+    ]
+
+    if valid_sharpe.empty:
+        return None
+
+    best_sharpe = valid_sharpe.loc[
+        valid_sharpe[
+            "sharpe"
+        ].idxmax()
     ].copy()
 
     # ========================================================
-    # 2. BEST CALMAR
+    # CRITERION 2
+    # BEST CALMAR
     # ========================================================
 
     valid_calmar = results_df[
@@ -673,11 +735,14 @@ def monte_carlo_optimize(
     else:
 
         best_calmar = valid_calmar.loc[
-            valid_calmar["calmar"].idxmax()
+            valid_calmar[
+                "calmar"
+            ].idxmax()
         ].copy()
 
     # ========================================================
-    # 3. BEST RETURN / RISK
+    # CRITERION 3
+    # BEST RETURN / RISK
     # ========================================================
 
     valid_return_risk = results_df[
@@ -699,7 +764,8 @@ def monte_carlo_optimize(
         )
 
     # ========================================================
-    # TOP 10%
+    # CRITERION 4
+    # ROBUST TOP-10% SHARPE REGION
     # ========================================================
 
     top_n = max(
@@ -722,7 +788,7 @@ def monte_carlo_optimize(
     )
 
     # ========================================================
-    # ROBUST TOP-10% THRESHOLDS
+    # ROBUST THRESHOLDS
     # ========================================================
 
     robust_buy_thr = (
@@ -738,7 +804,7 @@ def monte_carlo_optimize(
     )
 
     # ========================================================
-    # TOP-10% THRESHOLD DISTRIBUTION
+    # TOP-10% THRESHOLD STABILITY
     # ========================================================
 
     top10_buy_std = (
@@ -778,7 +844,7 @@ def monte_carlo_optimize(
     )
 
     # ========================================================
-    # TOP-10% SHARPE STATISTICS
+    # TOP-10% PERFORMANCE
     # ========================================================
 
     top10_mean_sharpe = (
@@ -829,30 +895,50 @@ def monte_carlo_optimize(
         ].median()
     )
 
+    top10_mean_return_risk = (
+        top10_results[
+            "return_risk"
+        ].mean()
+    )
+
+    top10_median_return_risk = (
+        top10_results[
+            "return_risk"
+        ].median()
+    )
+
     # ========================================================
-    # 4. ROBUST TOP-10% SHARPE CANDIDATE
-    #
-    # The candidate thresholds are the median thresholds
-    # of the top-10% Sharpe region.
-    #
-    # We do NOT claim this is itself the Sharpe of the
-    # median threshold pair. That will be evaluated later
-    # out-of-sample by walk_forward.py.
+    # ROBUST CRITERION SCORE
     # ========================================================
+
+    # The robust criterion is represented by the performance
+    # of the top-10% region, NOT by pretending that the median
+    # threshold pair itself was simulated.
+    #
+    # The median Sharpe of the top-10% region is therefore
+    # used as the robust-region score.
 
     robust_sharpe = (
         top10_median_sharpe
     )
 
+    robust_calmar = (
+        top10_median_calmar
+    )
+
+    robust_return_risk = (
+        top10_median_return_risk
+    )
+
     # ========================================================
-    # Return
+    # RETURN
     # ========================================================
 
     return {
 
-        # ----------------------------------------------------
-        # BEST SHARPE
-        # ----------------------------------------------------
+        # ====================================================
+        # CRITERION 1: SHARPE
+        # ====================================================
 
         "best_buy_thr":
             best_sharpe[
@@ -899,34 +985,58 @@ def monte_carlo_optimize(
                 "return_risk"
             ],
 
-        # ----------------------------------------------------
-        # BEST CALMAR
-        # ----------------------------------------------------
+        # ====================================================
+        # CRITERION 2: CALMAR
+        # ====================================================
 
         "calmar_buy_thr":
             (
-                best_calmar["buy_thr"]
+                best_calmar[
+                    "buy_thr"
+                ]
                 if best_calmar is not None
                 else np.nan
             ),
 
         "calmar_sell_thr":
             (
-                best_calmar["sell_thr"]
+                best_calmar[
+                    "sell_thr"
+                ]
                 if best_calmar is not None
                 else np.nan
             ),
 
         "calmar_score":
             (
-                best_calmar["calmar"]
+                best_calmar[
+                    "calmar"
+                ]
                 if best_calmar is not None
                 else np.nan
             ),
 
-        # ----------------------------------------------------
-        # BEST RETURN / RISK
-        # ----------------------------------------------------
+        "calmar_total_return":
+            (
+                best_calmar[
+                    "total_return"
+                ]
+                if best_calmar is not None
+                else np.nan
+            ),
+
+        "calmar_sharpe":
+            (
+                best_calmar[
+                    "sharpe"
+                ]
+                if best_calmar is not None
+                else np.nan
+            ),
+
+        # ====================================================
+        # CRITERION 3: RETURN / RISK
+        # ====================================================
 
         "return_risk_buy_thr":
             (
@@ -955,9 +1065,27 @@ def monte_carlo_optimize(
                 else np.nan
             ),
 
-        # ----------------------------------------------------
-        # ROBUST TOP-10%
-        # ----------------------------------------------------
+        "return_risk_total_return":
+            (
+                best_return_risk[
+                    "total_return"
+                ]
+                if best_return_risk is not None
+                else np.nan
+            ),
+
+        "return_risk_sharpe":
+            (
+                best_return_risk[
+                    "sharpe"
+                ]
+                if best_return_risk is not None
+                else np.nan
+            ),
+
+        # ====================================================
+        # CRITERION 4: ROBUST TOP-10%
+        # ====================================================
 
         "robust_buy_thr":
             robust_buy_thr,
@@ -968,16 +1096,22 @@ def monte_carlo_optimize(
         "robust_sharpe":
             robust_sharpe,
 
-        # ----------------------------------------------------
+        "robust_calmar":
+            robust_calmar,
+
+        "robust_return_risk":
+            robust_return_risk,
+
+        # ====================================================
         # TOP-10% SIZE
-        # ----------------------------------------------------
+        # ====================================================
 
         "top10_n":
             top_n,
 
-        # ----------------------------------------------------
+        # ====================================================
         # TOP-10% THRESHOLD DISTRIBUTION
-        # ----------------------------------------------------
+        # ====================================================
 
         "top10_buy_std":
             top10_buy_std,
@@ -997,9 +1131,9 @@ def monte_carlo_optimize(
         "top10_sell_max":
             top10_sell_max,
 
-        # ----------------------------------------------------
+        # ====================================================
         # TOP-10% PERFORMANCE
-        # ----------------------------------------------------
+        # ====================================================
 
         "top10_mean_sharpe":
             top10_mean_sharpe,
@@ -1025,9 +1159,15 @@ def monte_carlo_optimize(
         "top10_median_calmar":
             top10_median_calmar,
 
-        # ----------------------------------------------------
+        "top10_mean_return_risk":
+            top10_mean_return_risk,
+
+        "top10_median_return_risk":
+            top10_median_return_risk,
+
+        # ====================================================
         # COMPATIBILITY
-        # ----------------------------------------------------
+        # ====================================================
 
         "mu":
             best_sharpe[
@@ -1064,16 +1204,16 @@ def monte_carlo_optimize(
                 "calmar"
             ],
 
-        # ----------------------------------------------------
+        # ====================================================
         # ALL VALID SIMULATIONS
-        # ----------------------------------------------------
+        # ====================================================
 
         "all_results":
             results_df,
 
-        # ----------------------------------------------------
+        # ====================================================
         # TOP 10% SIMULATIONS
-        # ----------------------------------------------------
+        # ====================================================
 
         "top10_results":
             top10_results
