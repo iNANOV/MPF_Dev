@@ -158,8 +158,8 @@ def run_worker(max_num_components):
         )
 
         elapsed = (
-            time.time()
-            - worker_start
+            time.time() -
+            worker_start
         )
 
         # ----------------------------------------------------
@@ -177,8 +177,6 @@ def run_worker(max_num_components):
             )
 
             return None
-
-        # Number of walk-forward windows
 
         try:
 
@@ -201,8 +199,8 @@ def run_worker(max_num_components):
     except Exception as error:
 
         elapsed = (
-            time.time()
-            - worker_start
+            time.time() -
+            worker_start
         )
 
         print(
@@ -212,9 +210,6 @@ def run_worker(max_num_components):
             f"| time={elapsed / 60:.2f} min",
             flush=True
         )
-
-        # Re-raise so the main process knows
-        # that this job failed.
 
         raise
 
@@ -418,7 +413,6 @@ def main():
             ): n
 
             for n in component_values
-
         }
 
         # ----------------------------------------------------
@@ -523,7 +517,6 @@ def main():
     # --------------------------------------------------------
 
     print()
-
     print(
         "Combining optimization results..."
     )
