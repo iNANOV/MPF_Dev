@@ -1218,3 +1218,380 @@ def monte_carlo_optimize(
         "top10_results":
             top10_results
     }
+
+def monte_carlo_stage2_optimize(
+    data,
+    components,
+    membership,
+    calibration_start,
+    calibration_end,
+    max_num_components,
+    strategy,
+    ma_column,
+    ranking_column,
+    center_buy_thr,
+    center_sell_thr,
+    buy_std,
+    sell_std,
+    n_simulations=500,
+    threshold_step=0.01,
+    random_state=123,
+    initial_capital=100_000,
+    abs_cost_for_a_trade=5,
+    percent_cost_for_a_trade=0.001,
+    max_investment_size_in_percent=50,
+    min_cash_in_percent=10,
+):
+    """
+    Stage-2 Monte-Carlo optimization.
+
+    Stage 1 identifies a promising threshold region.
+
+    Stage 2 performs a denser Monte-Carlo search around that
+    region instead of searching the complete threshold space.
+
+    Four criteria are evaluated:
+
+        1. Sharpe
+        2. Calmar
+        3. Return / Risk
+        4. Robust top-10% Sharpe
+
+    The function returns the best threshold pair for each criterion
+    plus statistics describing the Stage-2 search region.
+    """
+
+    from .strategy import run_strategy
+
+    rng = np.random.default_rng(random_state)
+
+    candidates = []
+
+    # ---------------------------------------------------------
+    # Define Stage-2 search region
+    # ---------------------------------------------------------
+
+    buy_low = center_buy_thr - 2 * buy_std
+    buy_high = center_buy_thr + 2 * buy_std
+
+    sell_low = center_sell_thr - 2 * sell_std
+    sell_high = center_sell_thr + 2 * sell_std
+
+    # Keep thresholds inside the normal search range
+    buy_low = max(-0.30, buy_low)
+    buy_high = min(0.10, buy_high)
+
+    sell_low = max(-0.05, sell_low)
+    sell_high = min(0.35, sell_high)
+
+    # ---------------------------------------------------------
+    # Monte-Carlo Stage 2
+    # ---------------------------------------------------------
+
+    for i in range(n_simulations):
+
+        buy_thr = rng.uniform(
+            buy_low,
+            buy_high
+        )
+
+        sell_thr = rng.uniform(
+            sell_low,
+            sell_high
+        )
+
+        # Optional grid rounding
+        if threshold_step is not None and threshold_step > 0:
+            buy_thr = round(
+                buy_thr / threshold_step
+            ) * threshold_step
+
+            sell_thr = round(
+                sell_thr / threshold_step
+            ) * threshold_step
+
+        try:
+
+            result = run_strategy(
+                data=data,
+                components=components,
+                ma_column=ma_column,
+                buy_thr=buy_thr,
+                sell_thr=sell_thr,
+                strategy=strategy,
+                membership=membership,
+                max_num_components=max_num_components,
+                start_date=calibration_start,
+                ranking_column=ranking_column,
+                initial_capital=initial_capital,
+                abs_cost_for_a_trade=abs_cost_for_a_trade,
+                percent_cost_for_a_trade=percent_cost_for_a_trade,
+                max_investment_size_in_percent=max_investment_size_in_percent,
+                min_cash_in_percent=min_cash_in_percent,
+            )
+
+            portfolio = result["portfolio"]
+
+            evaluation = portfolio.loc[
+                calibration_start:calibration_end
+            ]
+
+            if evaluation.empty:
+                continue
+
+            values = evaluation[
+                "portfolio_value"
+            ].dropna()
+
+            if len(values) < 2:
+                continue
+
+            total_return = (
+                values.iloc[-1] /
+                values.iloc[0]
+                - 1
+            )
+
+            returns = values.pct_change().dropna()
+
+            if returns.empty:
+                continue
+
+            mu = returns.mean()
+            sigma = returns.std()
+
+            if sigma == 0 or not np.isfinite(sigma):
+                continue
+
+            sharpe = mu / sigma
+
+            running_max = values.cummax()
+
+            drawdown = (
+                values / running_max - 1
+            )
+
+            max_drawdown = drawdown.min()
+
+            if max_drawdown < 0:
+                calmar = (
+                    total_return /
+                    abs(max_drawdown)
+                )
+            else:
+                calmar = np.inf
+
+            return_risk = (
+                total_return /
+                sigma
+            )
+
+            candidates.append({
+                "buy_thr": buy_thr,
+                "sell_thr": sell_thr,
+                "total_return": total_return,
+                "mu": mu,
+                "sigma": sigma,
+                "sharpe": sharpe,
+                "calmar": calmar,
+                "return_risk": return_risk,
+                "max_drawdown": max_drawdown,
+            })
+
+        except Exception:
+            continue
+
+    # ---------------------------------------------------------
+    # No valid simulations
+    # ---------------------------------------------------------
+
+    if not candidates:
+        return None
+
+    results = pd.DataFrame(candidates)
+
+    # ---------------------------------------------------------
+    # Remove invalid values
+    # ---------------------------------------------------------
+
+    results = results.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+    results = results.dropna(
+        subset=[
+            "sharpe",
+            "calmar",
+            "return_risk",
+            "total_return",
+        ]
+    )
+
+    if results.empty:
+        return None
+
+    # ---------------------------------------------------------
+    # Four optimization criteria
+    # ---------------------------------------------------------
+
+    best_sharpe = results.loc[
+        results["sharpe"].idxmax()
+    ]
+
+    best_calmar = results.loc[
+        results["calmar"].idxmax()
+    ]
+
+    best_return_risk = results.loc[
+        results["return_risk"].idxmax()
+    ]
+
+    # ---------------------------------------------------------
+    # Robust top 10%
+    #
+    # Select top 10% according to Sharpe and use the
+    # median threshold pair.
+    # ---------------------------------------------------------
+
+    top_n = max(
+        1,
+        int(np.ceil(len(results) * 0.10))
+    )
+
+    top10 = results.nlargest(
+        top_n,
+        "sharpe"
+    )
+
+    robust_buy_thr = top10[
+        "buy_thr"
+    ].median()
+
+    robust_sell_thr = top10[
+        "sell_thr"
+    ].median()
+
+    robust_sharpe = top10[
+        "sharpe"
+    ].median()
+
+    robust_return = top10[
+        "total_return"
+    ].median()
+
+    robust_calmar = top10[
+        "calmar"
+    ].median()
+
+    robust_return_risk = top10[
+        "return_risk"
+    ].median()
+
+    # ---------------------------------------------------------
+    # Return everything needed by walk-forward
+    # ---------------------------------------------------------
+
+    return {
+
+        # Stage-2 search region
+        "stage2_buy_min": buy_low,
+        "stage2_buy_max": buy_high,
+        "stage2_sell_min": sell_low,
+        "stage2_sell_max": sell_high,
+
+        "stage2_n": len(results),
+
+        # -----------------------------------------------------
+        # Sharpe
+        # -----------------------------------------------------
+
+        "sharpe_buy_thr":
+            best_sharpe["buy_thr"],
+
+        "sharpe_sell_thr":
+            best_sharpe["sell_thr"],
+
+        "sharpe":
+            best_sharpe["sharpe"],
+
+        "sharpe_return":
+            best_sharpe["total_return"],
+
+        # -----------------------------------------------------
+        # Calmar
+        # -----------------------------------------------------
+
+        "calmar_buy_thr":
+            best_calmar["buy_thr"],
+
+        "calmar_sell_thr":
+            best_calmar["sell_thr"],
+
+        "calmar":
+            best_calmar["calmar"],
+
+        "calmar_return":
+            best_calmar["total_return"],
+
+        # -----------------------------------------------------
+        # Return / Risk
+        # -----------------------------------------------------
+
+        "return_risk_buy_thr":
+            best_return_risk["buy_thr"],
+
+        "return_risk_sell_thr":
+            best_return_risk["sell_thr"],
+
+        "return_risk":
+            best_return_risk["return_risk"],
+
+        "return_risk_return":
+            best_return_risk["total_return"],
+
+        # -----------------------------------------------------
+        # Robust top 10%
+        # -----------------------------------------------------
+
+        "robust_buy_thr":
+            robust_buy_thr,
+
+        "robust_sell_thr":
+            robust_sell_thr,
+
+        "robust_sharpe":
+            robust_sharpe,
+
+        "robust_return":
+            robust_return,
+
+        "robust_calmar":
+            robust_calmar,
+
+        "robust_return_risk":
+            robust_return_risk,
+
+        # -----------------------------------------------------
+        # Distribution statistics
+        # -----------------------------------------------------
+
+        "stage2_buy_std":
+            results["buy_thr"].std(),
+
+        "stage2_sell_std":
+            results["sell_thr"].std(),
+
+        "stage2_buy_min":
+            results["buy_thr"].min(),
+
+        "stage2_buy_max":
+            results["buy_thr"].max(),
+
+        "stage2_sell_min":
+            results["sell_thr"].min(),
+
+        "stage2_sell_max":
+            results["sell_thr"].max(),
+    }
+

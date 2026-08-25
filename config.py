@@ -78,9 +78,18 @@ TEST_SPAN = 12
 # MONTE CARLO OPTIMIZATION
 # ============================================================
 
-# Number of random threshold combinations tested
-# in every calibration period.
-N_SIMULATIONS = 50
+# ============================================================
+# WALK-FORWARD MONTE-CARLO SETTINGS
+# ============================================================
+
+# Stage 1:
+# Broad Monte-Carlo search over the complete threshold space.
+N_SIMULATIONS_STAGE1 = 50
+
+# Stage 2:
+# Focused Monte-Carlo search around the promising region
+# identified by Stage 1.
+N_SIMULATIONS_STAGE2 = 50
 
 
 # Threshold resolution.
