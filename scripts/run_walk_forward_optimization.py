@@ -42,12 +42,15 @@ from config import (
     MOVING_PARAM,
     TEST_SPAN,
 
-    N_SIMULATIONS,
+    N_SIMULATIONS_STAGE1,
+    N_SIMULATIONS_STAGE2,
+
     THRESHOLD_STEP,
     RANDOM_STATE,
 
     MIN_NUM_COMPONENTS,
     MAX_NUM_COMPONENTS,
+
     INITIAL_CAPITAL,
     ABS_COST_FOR_A_TRADE,
     PERCENT_COST_FOR_A_TRADE,
@@ -65,13 +68,6 @@ from src.walk_forward import run_single_walk_forward
 # ============================================================
 
 def run_worker(max_num_components):
-    """
-    Run the complete walk-forward optimization for one value
-    of max_num_components.
-
-    Each worker loads its own data so that large DataFrames do
-    not have to be serialized and transferred between processes.
-    """
 
     worker_start = time.time()
 
@@ -102,7 +98,7 @@ def run_worker(max_num_components):
         )
 
         # ----------------------------------------------------
-        # Run walk-forward optimization
+        # Run walk-forward
         # ----------------------------------------------------
 
         result = run_single_walk_forward(
@@ -129,7 +125,17 @@ def run_worker(max_num_components):
 
             test_span=TEST_SPAN,
 
-            n_simulations=N_SIMULATIONS,
+            # ------------------------------------------------
+            # TWO-STAGE MONTE CARLO
+            # ------------------------------------------------
+
+            n_simulations_stage1=(
+                N_SIMULATIONS_STAGE1
+            ),
+
+            n_simulations_stage2=(
+                N_SIMULATIONS_STAGE2
+            ),
 
             threshold_step=THRESHOLD_STEP,
 
@@ -163,13 +169,14 @@ def run_worker(max_num_components):
         )
 
         # ----------------------------------------------------
-        # Check result
+        # Result check
         # ----------------------------------------------------
 
         if result is None:
 
             print(
-                f"[DONE ] max_num_components="
+                f"[DONE ] "
+                f"max_num_components="
                 f"{max_num_components} "
                 f"| NO RESULT "
                 f"| time={elapsed / 60:.2f} min",
@@ -179,15 +186,13 @@ def run_worker(max_num_components):
             return None
 
         try:
-
             n_windows = len(result)
-
         except TypeError:
-
             n_windows = 0
 
         print(
-            f"[DONE ] max_num_components="
+            f"[DONE ] "
+            f"max_num_components="
             f"{max_num_components} "
             f"| windows={n_windows} "
             f"| time={elapsed / 60:.2f} min",
@@ -204,9 +209,11 @@ def run_worker(max_num_components):
         )
 
         print(
-            f"[ERROR] max_num_components="
+            f"[ERROR] "
+            f"max_num_components="
             f"{max_num_components} "
-            f"| {type(error).__name__}: {error} "
+            f"| {type(error).__name__}: "
+            f"{error} "
             f"| time={elapsed / 60:.2f} min",
             flush=True
         )
@@ -223,7 +230,7 @@ def main():
     print()
     print("=" * 80)
     print(
-        " WALK-FORWARD MONTE-CARLO OPTIMIZATION"
+        " WALK-FORWARD TWO-STAGE MONTE-CARLO OPTIMIZATION"
     )
     print("=" * 80)
 
@@ -232,64 +239,69 @@ def main():
     # --------------------------------------------------------
 
     print(
-        f"Strategy             : {STRATEGY}"
+        f"Strategy                 : {STRATEGY}"
     )
 
     print(
-        f"Components           : "
+        f"Components               : "
         f"{MIN_NUM_COMPONENTS} -> "
         f"{MAX_NUM_COMPONENTS}"
     )
 
     print(
-        f"Start date           : "
+        f"Start date               : "
         f"{START_DATE}"
     )
 
     print(
-        f"Calibration window   : "
+        f"Calibration window       : "
         f"{CALIBRATION_WINDOW} years"
     )
 
     print(
-        f"Moving parameter     : "
+        f"Moving parameter         : "
         f"{MOVING_PARAM} months"
     )
 
     print(
-        f"Test span            : "
+        f"Test span                : "
         f"{TEST_SPAN} months"
     )
 
     print(
-        f"MC simulations       : "
-        f"{N_SIMULATIONS}"
+        f"Stage-1 MC simulations   : "
+        f"{N_SIMULATIONS_STAGE1}"
     )
 
     print(
-        f"Threshold step       : "
+        f"Stage-2 MC simulations   : "
+        f"{N_SIMULATIONS_STAGE2}"
+    )
+
+    print(
+        f"Threshold step           : "
         f"{THRESHOLD_STEP}"
     )
 
     print(
-        f"Initial capital      : "
+        f"Initial capital          : "
         f"{INITIAL_CAPITAL:,.0f}"
     )
 
     print(
-        f"Random state         : "
+        f"Random state             : "
         f"{RANDOM_STATE}"
     )
 
     print(
-        f"Max workers          : "
+        f"Max workers              : "
         f"{MAX_WORKERS or 'automatic'}"
     )
 
     print()
 
     print(
-        f"Output file          : "
+        f"Output file              : "
         f"{OUTPUT_FILE}"
     )
 
@@ -334,22 +346,22 @@ def main():
     )
 
     print(
-        f"Data rows           : "
+        f"Data rows               : "
         f"{len(data):,}"
     )
 
     print(
-        f"Data columns        : "
+        f"Data columns            : "
         f"{len(data.columns):,}"
     )
 
     print(
-        f"Components           : "
+        f"Components               : "
         f"{len(components)}"
     )
 
     print(
-        f"Date range           : "
+        f"Date range               : "
         f"{data.index.min().date()} "
         f"-> "
         f"{data.index.max().date()}"
@@ -440,13 +452,8 @@ def main():
                     )
 
                     try:
-
-                        n_windows = len(
-                            result
-                        )
-
+                        n_windows = len(result)
                     except TypeError:
-
                         n_windows = 0
 
                 else:
@@ -584,7 +591,6 @@ def main():
     # --------------------------------------------------------
 
     print()
-
     print("=" * 80)
     print(
         " OPTIMIZATION FINISHED"
