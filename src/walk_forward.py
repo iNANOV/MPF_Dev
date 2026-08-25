@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import time
 
-from .config import (
+from config import (
     N_SIMULATIONS_STAGE1,
     N_SIMULATIONS_STAGE2,
 )
