@@ -27,7 +27,8 @@ def run_single_walk_forward(
     window,
     moving_param,
     test_span,
-    n_simulations=500,
+    n_simulations_stage1=None,
+    n_simulations_stage2=None,
     threshold_step=0.01,
     random_state=123,
     initial_capital=100_000,
@@ -41,24 +42,33 @@ def run_single_walk_forward(
 
     Stage 1
     -------
-    Broad Monte-Carlo search using N_SIMULATIONS_STAGE1.
+    Broad Monte-Carlo search.
 
     Stage 2
     -------
     Focused Monte-Carlo search around the robust top-10%
-    threshold region identified in Stage 1, using
-    N_SIMULATIONS_STAGE2.
+    threshold region identified in Stage 1.
 
     Four optimization criteria are evaluated:
 
         1. Sharpe
         2. Calmar
         3. Return / Risk
-        4. Robust top-10% Sharpe region
+        4. Robust top-10% region
 
     Each Stage-2 criterion is evaluated on the
     following out-of-sample period.
     """
+
+    # ---------------------------------------------------------
+    # Simulation settings
+    # ---------------------------------------------------------
+
+    if n_simulations_stage1 is None:
+        n_simulations_stage1 = N_SIMULATIONS_STAGE1
+
+    if n_simulations_stage2 is None:
+        n_simulations_stage2 = N_SIMULATIONS_STAGE2
 
     start_time = time.time()
 
@@ -83,13 +93,10 @@ def run_single_walk_forward(
     # =========================================================
 
     temp_date = test_start
-
     total_windows = 0
 
     while temp_date <= last_date:
-
         total_windows += 1
-
         temp_date += pd.DateOffset(
             months=moving_param
         )
@@ -98,8 +105,8 @@ def run_single_walk_forward(
         f"[WF START] "
         f"components={max_num_components} | "
         f"windows={total_windows} | "
-        f"MC Stage1/window={N_SIMULATIONS_STAGE1} | "
-        f"MC Stage2/window={N_SIMULATIONS_STAGE2}",
+        f"MC Stage1/window={n_simulations_stage1} | "
+        f"MC Stage2/window={n_simulations_stage2}",
         flush=True
     )
 
@@ -159,57 +166,33 @@ def run_single_walk_forward(
             f"[STAGE1] "
             f"components={max_num_components} | "
             f"window={iteration}/{total_windows} | "
-            f"simulations={N_SIMULATIONS_STAGE1}",
+            f"simulations={n_simulations_stage1}",
             flush=True
         )
 
         optimization = monte_carlo_optimize(
-
             data=data,
-
             components=components,
-
             membership=membership,
-
             calibration_start=calibration_start,
-
             calibration_end=calibration_end,
-
             max_num_components=max_num_components,
-
             strategy=strategy,
-
             ma_column=ma_column,
-
             ranking_column=ranking_column,
-
-            n_simulations=N_SIMULATIONS_STAGE1,
-
+            n_simulations=n_simulations_stage1,
             threshold_step=threshold_step,
-
             random_state=(
                 random_state +
                 iteration
             ),
-
             initial_capital=initial_capital,
-
-            abs_cost_for_a_trade=(
-                abs_cost_for_a_trade
-            ),
-
-            percent_cost_for_a_trade=(
-                percent_cost_for_a_trade
-            ),
-
+            abs_cost_for_a_trade=abs_cost_for_a_trade,
+            percent_cost_for_a_trade=percent_cost_for_a_trade,
             max_investment_size_in_percent=(
                 max_investment_size_in_percent
             ),
-
-            min_cash_in_percent=(
-                min_cash_in_percent
-            ),
-
+            min_cash_in_percent=min_cash_in_percent,
             progress_info={
                 "window": iteration,
                 "total_windows": total_windows
@@ -258,16 +241,10 @@ def run_single_walk_forward(
             np.nan
         )
 
-        # -----------------------------------------------------
-        # Fallback if standard deviation is unavailable
-        # -----------------------------------------------------
-
         if not np.isfinite(buy_std_stage1):
-
             buy_std_stage1 = threshold_step
 
         if not np.isfinite(sell_std_stage1):
-
             sell_std_stage1 = threshold_step
 
         # =====================================================
@@ -278,7 +255,7 @@ def run_single_walk_forward(
             f"[STAGE2] "
             f"components={max_num_components} | "
             f"window={iteration}/{total_windows} | "
-            f"simulations={N_SIMULATIONS_STAGE2} | "
+            f"simulations={n_simulations_stage2} | "
             f"center_buy={robust_buy_thr_stage1:+.3f} | "
             f"center_sell={robust_sell_thr_stage1:+.3f} | "
             f"buy_std={buy_std_stage1:.3f} | "
@@ -287,60 +264,33 @@ def run_single_walk_forward(
         )
 
         stage2 = monte_carlo_stage2_optimize(
-
             data=data,
-
             components=components,
-
             membership=membership,
-
             calibration_start=calibration_start,
-
             calibration_end=calibration_end,
-
             max_num_components=max_num_components,
-
             strategy=strategy,
-
             ma_column=ma_column,
-
             ranking_column=ranking_column,
-
             center_buy_thr=robust_buy_thr_stage1,
-
             center_sell_thr=robust_sell_thr_stage1,
-
             buy_std=buy_std_stage1,
-
             sell_std=sell_std_stage1,
-
-            n_simulations=N_SIMULATIONS_STAGE2,
-
+            n_simulations=n_simulations_stage2,
             threshold_step=threshold_step,
-
             random_state=(
                 random_state +
                 10000 +
                 iteration
             ),
-
             initial_capital=initial_capital,
-
-            abs_cost_for_a_trade=(
-                abs_cost_for_a_trade
-            ),
-
-            percent_cost_for_a_trade=(
-                percent_cost_for_a_trade
-            ),
-
+            abs_cost_for_a_trade=abs_cost_for_a_trade,
+            percent_cost_for_a_trade=percent_cost_for_a_trade,
             max_investment_size_in_percent=(
                 max_investment_size_in_percent
             ),
-
-            min_cash_in_percent=(
-                min_cash_in_percent
-            )
+            min_cash_in_percent=min_cash_in_percent
         )
 
         # =====================================================
@@ -413,44 +363,23 @@ def run_single_walk_forward(
             ].copy()
 
             result = run_strategy(
-
                 data=test_data,
-
                 components=components,
-
                 ma_column=ma_column,
-
                 buy_thr=buy_thr,
-
                 sell_thr=sell_thr,
-
                 strategy=strategy,
-
                 membership=membership,
-
                 max_num_components=max_num_components,
-
                 start_date=test_start,
-
                 ranking_column=ranking_column,
-
                 initial_capital=initial_capital,
-
-                abs_cost_for_a_trade=(
-                    abs_cost_for_a_trade
-                ),
-
-                percent_cost_for_a_trade=(
-                    percent_cost_for_a_trade
-                ),
-
+                abs_cost_for_a_trade=abs_cost_for_a_trade,
+                percent_cost_for_a_trade=percent_cost_for_a_trade,
                 max_investment_size_in_percent=(
                     max_investment_size_in_percent
                 ),
-
-                min_cash_in_percent=(
-                    min_cash_in_percent
-                )
+                min_cash_in_percent=min_cash_in_percent
             )
 
             portfolio = result["portfolio"]
@@ -460,7 +389,6 @@ def run_single_walk_forward(
             ]
 
             if evaluation.empty:
-
                 return np.nan
 
             values = evaluation[
@@ -468,7 +396,6 @@ def run_single_walk_forward(
             ].dropna()
 
             if len(values) < 2:
-
                 return np.nan
 
             return (
@@ -570,7 +497,7 @@ def run_single_walk_forward(
                 test_end,
 
             # -------------------------------------------------
-            # Stage 1 robust region
+            # Stage 1
             # -------------------------------------------------
 
             "stage1_robust_buy_thr":
