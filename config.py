@@ -86,12 +86,12 @@ TEST_SPAN = 12
 
 # Stage 1:
 # Broad Monte-Carlo search over the complete threshold space.
-N_SIMULATIONS_STAGE1 = 10
+N_SIMULATIONS_STAGE1 = 100
 
 # Stage 2:
 # Focused Monte-Carlo search around the promising region
 # identified by Stage 1.
-N_SIMULATIONS_STAGE2 = 10
+N_SIMULATIONS_STAGE2 = 100
 
 
 # Threshold resolution.
