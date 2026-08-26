@@ -46,7 +46,7 @@ RANKING_COLUMN = "{}_mean_sd"
 #     START_DATE + CALIBRATION_WINDOW
 #
 # is available for the first optimization.
-START_DATE = "2010-01-01"
+START_DATE = "2009-01-01"
 
 
 # Historical calibration window in years.

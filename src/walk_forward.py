@@ -676,13 +676,13 @@ def run_single_walk_forward(
 
             "stage2_buy_std":
                 stage2.get(
-                    "stage2_buy_std",
+                    "stage2_actual_buy_std",
                     np.nan
                 ),
 
             "stage2_sell_std":
                 stage2.get(
-                    "stage2_sell_std",
+                    "stage2_actual_sell_std",
                     np.nan
                 ),
 
