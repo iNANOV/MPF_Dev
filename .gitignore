@@ -223,5 +223,7 @@ data/
 # Results
 results/
 
-# Research
-notebooks/research.ipynb
+# Ignore all notebooks except data.ipynb
+notebooks/*
+!notebooks/data.ipynb
+!notebooks/technical_guide.ipynb
