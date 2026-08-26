@@ -51,3 +51,10 @@ Walk-forward Monte-Carlo optimization framework for mean-reversion and momentum 
 <p align="center">
   <img src="mpf_time_mechanics.png" alt="MPF_Dev Time Mechanics" width="1000">
 </p>
+
+---
+
+<p align="center">
+  <img src="mpf_tech_infographic.png" alt="MPF_Dev Details" width="1000">
+</p>
+
