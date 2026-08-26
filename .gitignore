@@ -222,3 +222,6 @@ data/
 
 # Results
 results/
+
+# Research
+notebooks/research.ipynb

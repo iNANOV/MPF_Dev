@@ -32,6 +32,8 @@ from config import (
     DATA_FILE,
     MEMBERSHIP_FILE,
     OUTPUT_FILE,
+    CONFIG_LOG,          
+    save_config_log,     
 
     STRATEGY,
     MA_COLUMN,
@@ -304,10 +306,15 @@ def main():
         f"Output file              : "
         f"{OUTPUT_FILE}"
     )
+    print(
+        f"Config log               : "
+        f"{CONFIG_LOG}"
+    )
 
     print("=" * 80)
     print()
 
+    save_config_log()
     # --------------------------------------------------------
     # Check input files
     # --------------------------------------------------------

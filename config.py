@@ -1,5 +1,7 @@
 from pathlib import Path
-
+import json
+import uuid
+from datetime import datetime, timezone
 
 # ============================================================
 # PROJECT PATHS
@@ -84,12 +86,12 @@ TEST_SPAN = 12
 
 # Stage 1:
 # Broad Monte-Carlo search over the complete threshold space.
-N_SIMULATIONS_STAGE1 = 50
+N_SIMULATIONS_STAGE1 = 10
 
 # Stage 2:
 # Focused Monte-Carlo search around the promising region
 # identified by Stage 1.
-N_SIMULATIONS_STAGE2 = 50
+N_SIMULATIONS_STAGE2 = 10
 
 
 # Threshold resolution.
@@ -158,10 +160,70 @@ MAX_WORKERS = 2
 
 
 # ============================================================
-# OUTPUT
+# OUTPUT  (unique run ID + JSON log)
 # ============================================================
 
-OUTPUT_FILE = (
-    RESULTS_DIR /
-    "walk_forward_results.csv"
+RUN_ID = uuid.uuid4().hex[:12]                     # e.g. "a3f9c2e1b8d4"
+TIMESTAMP = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+BASE_NAME = (
+    f"wf_{STRATEGY}"
+    f"_cal{CALIBRATION_WINDOW}"
+    f"_move{MOVING_PARAM}"
+    f"_test{TEST_SPAN}"
+    f"_ncomp{MIN_NUM_COMPONENTS}-{MAX_NUM_COMPONENTS}"
+    f"_{TIMESTAMP}"
+    f"_{RUN_ID}"
 )
+
+OUTPUT_FILE = RESULTS_DIR / f"{BASE_NAME}.csv"
+CONFIG_LOG  = RESULTS_DIR / f"{BASE_NAME}.json"
+
+
+def save_config_log(path: Path = CONFIG_LOG) -> None:
+    """
+    Dump every relevant parameter (everything except pure PROJECT PATHS).
+    """
+    config = {
+        # meta
+        "run_id": RUN_ID,
+        "timestamp_utc": TIMESTAMP,
+        "output_file": OUTPUT_FILE.name,
+
+        # strategy
+        "STRATEGY": STRATEGY,
+        "MA_COLUMN": MA_COLUMN,
+        "RANKING_COLUMN": RANKING_COLUMN,
+
+        # walk-forward
+        "START_DATE": START_DATE,
+        "CALIBRATION_WINDOW": CALIBRATION_WINDOW,
+        "MOVING_PARAM": MOVING_PARAM,
+        "TEST_SPAN": TEST_SPAN,
+
+        # Monte-Carlo
+        "N_SIMULATIONS_STAGE1": N_SIMULATIONS_STAGE1,
+        "N_SIMULATIONS_STAGE2": N_SIMULATIONS_STAGE2,
+        "THRESHOLD_STEP": THRESHOLD_STEP,
+        "RANDOM_STATE": RANDOM_STATE,
+
+        # portfolio size
+        "MIN_NUM_COMPONENTS": MIN_NUM_COMPONENTS,
+        "MAX_NUM_COMPONENTS": MAX_NUM_COMPONENTS,
+
+        # portfolio
+        "INITIAL_CAPITAL": INITIAL_CAPITAL,
+        "ABS_COST_FOR_A_TRADE": ABS_COST_FOR_A_TRADE,
+        "PERCENT_COST_FOR_A_TRADE": PERCENT_COST_FOR_A_TRADE,
+        "MAX_INVESTMENT_SIZE_IN_PERCENT": MAX_INVESTMENT_SIZE_IN_PERCENT,
+        "MIN_CASH_IN_PERCENT": MIN_CASH_IN_PERCENT,
+
+        # parallelization
+        "MAX_WORKERS": MAX_WORKERS,
+    }
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+
+    print(f"Config log written → {path}")
