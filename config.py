@@ -86,12 +86,12 @@ TEST_SPAN = 12
 
 # Stage 1:
 # Broad Monte-Carlo search over the complete threshold space.
-N_SIMULATIONS_STAGE1 = 100
+N_SIMULATIONS_STAGE1 = 500
 
 # Stage 2:
 # Focused Monte-Carlo search around the promising region
 # identified by Stage 1.
-N_SIMULATIONS_STAGE2 = 100
+N_SIMULATIONS_STAGE2 = 500
 
 
 # Threshold resolution.
@@ -126,7 +126,7 @@ RANDOM_STATE = 42
 # 2, 3, 4, ..., 20
 #
 MIN_NUM_COMPONENTS = 2
-MAX_NUM_COMPONENTS = 3
+MAX_NUM_COMPONENTS = 20
 
 
 # ============================================================
@@ -152,7 +152,7 @@ MIN_CASH_IN_PERCENT = 10
 #
 # Example:
 #
-MAX_WORKERS = 2
+MAX_WORKERS = 19
 #
 # can be useful if the machine has many CPUs but you don't
 # want the optimization to consume all of them.
