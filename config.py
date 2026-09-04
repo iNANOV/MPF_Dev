@@ -61,7 +61,7 @@ START_DATE = "2009-01-01"
 # First optimization:
 # historical data -> 2014-01-01
 #
-CALIBRATION_WINDOW = 15
+CALIBRATION_WINDOW = 6
 
 
 # How far the test window moves forward.
@@ -86,12 +86,12 @@ TEST_SPAN = 12
 
 # Stage 1:
 # Broad Monte-Carlo search over the complete threshold space.
-N_SIMULATIONS_STAGE1 = 2000
+N_SIMULATIONS_STAGE1 = 500
 
 # Stage 2:
 # Focused Monte-Carlo search around the promising region
 # identified by Stage 1.
-N_SIMULATIONS_STAGE2 = 2000
+N_SIMULATIONS_STAGE2 = 250
 
 
 # Threshold resolution.
@@ -114,7 +114,7 @@ THRESHOLD_STEP = 0.01
 # Random seed.
 #
 # Keeping this fixed makes the experiment reproducible.
-RANDOM_STATE = 42
+RANDOM_STATE = 43
 
 
 # ============================================================
@@ -125,8 +125,8 @@ RANDOM_STATE = 42
 #
 # 2, 3, 4, ..., 20
 #
-MIN_NUM_COMPONENTS = 18
-MAX_NUM_COMPONENTS = 18
+MIN_NUM_COMPONENTS = 5
+MAX_NUM_COMPONENTS = 20
 
 
 # ============================================================
@@ -152,7 +152,7 @@ MIN_CASH_IN_PERCENT = 10
 #
 # Example:
 #
-MAX_WORKERS = 19
+MAX_WORKERS = 16
 #
 # can be useful if the machine has many CPUs but you don't
 # want the optimization to consume all of them.

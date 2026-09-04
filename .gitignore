@@ -227,3 +227,4 @@ results/
 notebooks/*
 !notebooks/data.ipynb
 !notebooks/technical_guide.ipynb
+!notebooks/research_for_article.ipynb
