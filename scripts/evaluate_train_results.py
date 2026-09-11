@@ -3,11 +3,9 @@
 # ============================================================
 
 from pathlib import Path
-import argparse
+import sys
 
 import pandas as pd
-
-from src.evaluation import rank_mpf_configurations
 
 
 # ============================================================
@@ -15,7 +13,311 @@ from src.evaluation import rank_mpf_configurations
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 RESULTS_DIR = PROJECT_ROOT / "results"
+
+
+# ============================================================
+# PYTHON PATH
+# ============================================================
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+from src.evaluation import rank_mpf_results
+
+
+# ============================================================
+# OUTPUT SUFFIXES
+# ============================================================
+
+CLASSICAL_SUFFIX = "_uniq_classical_ranking.csv"
+IDR_SUFFIX = "_uniq_idr_ranking.csv"
+FINAL_SUFFIX = "_uniq_final_selection.csv"
+
+
+# ============================================================
+# INPUT FILE DISCOVERY
+# ============================================================
+
+def find_result_files():
+    """
+    Find completed MPF optimization CSV files.
+
+    JSON files without a corresponding CSV are ignored.
+
+    Evaluation output files containing the '_uniq_' suffix
+    are excluded from the input files.
+    """
+
+    csv_files = sorted(
+        path
+        for path in RESULTS_DIR.glob("*.csv")
+        if "_uniq_" not in path.name
+    )
+
+    completed_files = []
+
+    for csv_file in csv_files:
+
+        # ----------------------------------------------------
+        # Ignore empty CSV files
+        # ----------------------------------------------------
+
+        if csv_file.stat().st_size == 0:
+            print(
+                f"Skipping empty CSV: {csv_file.name}"
+            )
+            continue
+
+        completed_files.append(csv_file)
+
+    return completed_files
+
+
+# ============================================================
+# OUTPUT PATHS
+# ============================================================
+
+def get_output_paths(csv_file):
+    """
+    Return the three evaluation-output paths associated
+    with one optimization result CSV.
+    """
+
+    stem = csv_file.stem
+
+    return {
+        "classical": (
+            RESULTS_DIR
+            / f"{stem}{CLASSICAL_SUFFIX}"
+        ),
+        "idr": (
+            RESULTS_DIR
+            / f"{stem}{IDR_SUFFIX}"
+        ),
+        "final": (
+            RESULTS_DIR
+            / f"{stem}{FINAL_SUFFIX}"
+        ),
+    }
+
+
+# ============================================================
+# CHECK WHETHER EVALUATION IS COMPLETE
+# ============================================================
+
+def evaluation_is_complete(output_paths):
+    """
+    Check whether all three evaluation files already exist.
+    """
+
+    return all(
+        path.exists()
+        for path in output_paths.values()
+    )
+
+
+# ============================================================
+# EVALUATE ONE RESULT FILE
+# ============================================================
+
+def evaluate_result_file(csv_file):
+    """
+    Evaluate one completed MPF optimization result CSV.
+
+    Only missing evaluation outputs are written.
+    """
+
+    output_paths = get_output_paths(
+        csv_file
+    )
+
+    print("\n" + "=" * 80)
+    print(
+        f"INPUT: {csv_file.name}"
+    )
+    print("=" * 80)
+
+    # --------------------------------------------------------
+    # Check existing outputs
+    # --------------------------------------------------------
+
+    if evaluation_is_complete(
+        output_paths
+    ):
+
+        print(
+            "\nAll three evaluation files already exist."
+        )
+
+        for path in output_paths.values():
+            print(
+                f"  {path.name}"
+            )
+
+        print(
+            "\nSkipping."
+        )
+
+        return False
+
+    # --------------------------------------------------------
+    # Load result CSV
+    # --------------------------------------------------------
+
+    print(
+        "\nLoading result CSV..."
+    )
+
+    try:
+        df = pd.read_csv(
+            csv_file
+        )
+    except Exception as exc:
+
+        print(
+            f"\nWARNING: Could not read "
+            f"{csv_file.name}: {exc}"
+        )
+
+        return False
+
+    if df.empty:
+
+        print(
+            "\nWARNING: CSV is empty. Skipping."
+        )
+
+        return False
+
+    print(
+        f"Rows: {len(df):,}"
+    )
+
+    print(
+        f"Columns: {len(df.columns):,}"
+    )
+
+    # --------------------------------------------------------
+    # Evaluate
+    # --------------------------------------------------------
+
+    print(
+        "\nCalculating rankings..."
+    )
+
+    try:
+
+        (
+            classical_ranking,
+            idr_ranking,
+            final_selection,
+        ) = rank_mpf_results(df)
+
+    except Exception as exc:
+
+        print(
+            f"\nWARNING: Evaluation failed for "
+            f"{csv_file.name}: {exc}"
+        )
+
+        return False
+
+    # --------------------------------------------------------
+    # Save Classical ranking
+    # --------------------------------------------------------
+
+    if not output_paths["classical"].exists():
+
+        classical_ranking.to_csv(
+            output_paths["classical"],
+            index=False,
+        )
+
+        print(
+            "\nWritten:"
+            f"\n  {output_paths['classical'].name}"
+        )
+
+    else:
+
+        print(
+            "\nAlready exists:"
+            f"\n  {output_paths['classical'].name}"
+        )
+
+    # --------------------------------------------------------
+    # Save IDR ranking
+    # --------------------------------------------------------
+
+    if not output_paths["idr"].exists():
+
+        idr_ranking.to_csv(
+            output_paths["idr"],
+            index=False,
+        )
+
+        print(
+            "\nWritten:"
+            f"\n  {output_paths['idr'].name}"
+        )
+
+    else:
+
+        print(
+            "\nAlready exists:"
+            f"\n  {output_paths['idr'].name}"
+        )
+
+    # --------------------------------------------------------
+    # Save final selection
+    # --------------------------------------------------------
+
+    if not output_paths["final"].exists():
+
+        final_selection.to_csv(
+            output_paths["final"],
+            index=False,
+        )
+
+        print(
+            "\nWritten:"
+            f"\n  {output_paths['final'].name}"
+        )
+
+    else:
+
+        print(
+            "\nAlready exists:"
+            f"\n  {output_paths['final'].name}"
+        )
+
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
+
+    print(
+        "\nEvaluation complete."
+    )
+
+    print(
+        f"  Classical candidates: "
+        f"{len(classical_ranking):,}"
+    )
+
+    print(
+        f"  IDR candidates: "
+        f"{len(idr_ranking):,}"
+    )
+
+    print(
+        f"  Final configurations: "
+        f"{len(final_selection):,}"
+    )
+
+    return True
 
 
 # ============================================================
@@ -24,160 +326,97 @@ RESULTS_DIR = PROJECT_ROOT / "results"
 
 def main():
 
-    parser = argparse.ArgumentParser(
-        description="Evaluate MPF training / hyperparameter-selection results."
-    )
-
-    parser.add_argument(
-        "results_file",
-        type=str,
-        help="CSV result file to evaluate.",
-    )
-
-    args = parser.parse_args()
-
-    # --------------------------------------------------------
-    # Resolve input file
-    # --------------------------------------------------------
-
-    results_path = Path(args.results_file)
-
-    # If only a filename was supplied, look in results/
-    if not results_path.is_absolute():
-
-        if not results_path.exists():
-            results_path = RESULTS_DIR / results_path
-
-    if not results_path.exists():
-
-        raise FileNotFoundError(
-            f"\nResults file not found:\n"
-            f"{results_path}\n"
-        )
-
-    # --------------------------------------------------------
-    # Load results
-    # --------------------------------------------------------
-
     print("=" * 80)
     print("MPF — TRAINING RESULTS EVALUATION")
     print("=" * 80)
 
-    print(f"\nInput file:")
-    print(results_path)
-
-    df = pd.read_csv(results_path)
-
-    print(f"\nRows: {len(df):,}")
-    print(f"Columns: {len(df.columns):,}")
-
     # --------------------------------------------------------
-    # Rank configurations
+    # Check results directory
     # --------------------------------------------------------
 
-    metrics_df, ranking_df = rank_mpf_configurations(df)
+    if not RESULTS_DIR.exists():
 
-    # --------------------------------------------------------
-    # Print overall ranking
-    # --------------------------------------------------------
-
-    print("\n" + "=" * 80)
-    print("MPF — OVERALL RANKING")
-    print("=" * 80)
-
-    display_table = ranking_df.copy()
-
-    display_table.columns = [
-        "Overall Rank",
-        "Components",
-        "Method",
-        "Average Rank",
-        "Rank Positive Windows",
-        "Rank Mean Excess",
-        "Rank Compound Excess",
-        "Rank Sharpe",
-    ]
-
-    display_table["Overall Rank"] = (
-        display_table["Overall Rank"]
-        .astype(int)
-    )
-
-    print(
-        display_table.to_string(
-            index=False,
-            float_format=lambda x: f"{x:.2f}",
+        raise FileNotFoundError(
+            f"Results directory does not exist:\n"
+            f"{RESULTS_DIR}"
         )
-    )
 
     # --------------------------------------------------------
-    # Top configurations
+    # Find completed CSV files
     # --------------------------------------------------------
 
-    print("\n" + "=" * 80)
-    print("TOP 10 CONFIGURATIONS")
-    print("=" * 80)
+    csv_files = find_result_files()
 
     print(
-        display_table
-        .head(10)
-        .to_string(
-            index=False,
-            float_format=lambda x: f"{x:.2f}",
+        f"\nFound {len(csv_files):,} "
+        f"completed result CSV file(s)."
+    )
+
+    if not csv_files:
+
+        print(
+            "\nNo completed CSV files found."
         )
-    )
+
+        return
 
     # --------------------------------------------------------
-    # Save evaluation results
+    # Process every completed result independently
     # --------------------------------------------------------
 
-    stem = results_path.stem
+    processed = 0
+    skipped = 0
 
-    ranking_output = (
-        RESULTS_DIR
-        / f"{stem}_ranking.csv"
-    )
+    for csv_file in csv_files:
 
-    metrics_output = (
-        RESULTS_DIR
-        / f"{stem}_metrics.csv"
-    )
+        output_paths = get_output_paths(
+            csv_file
+        )
 
-    display_table.to_csv(
-        ranking_output,
-        index=False,
-    )
+        if evaluation_is_complete(
+            output_paths
+        ):
+            skipped += 1
+            continue
 
-    metrics_df.to_csv(
-        metrics_output,
-        index=False,
-    )
-
-    print("\n" + "=" * 80)
-    print("EVALUATION FILES WRITTEN")
-    print("=" * 80)
-
-    print(f"\nRanking:")
-    print(ranking_output)
-
-    print(f"\nMetrics:")
-    print(metrics_output)
+        if evaluate_result_file(
+            csv_file
+        ):
+            processed += 1
 
     # --------------------------------------------------------
-    # Best configuration
+    # Final summary
     # --------------------------------------------------------
-
-    best = display_table.iloc[0]
-
-    print("\n" + "=" * 80)
-    print("BEST CONFIGURATION")
-    print("=" * 80)
 
     print(
-        f"\nOverall Rank : {best['Overall Rank']}"
-        f"\nComponents   : {best['Components']}"
-        f"\nMethod       : {best['Method']}"
-        f"\nAverage Rank : {best['Average Rank']:.2f}"
+        "\n" + "=" * 80
+    )
+
+    print(
+        "EVALUATION SUMMARY"
+    )
+
+    print(
+        "=" * 80
+    )
+
+    print(
+        f"\nCompleted CSV files found: "
+        f"{len(csv_files):,}"
+    )
+
+    print(
+        f"Files newly evaluated: "
+        f"{processed:,}"
+    )
+
+    print(
+        f"Files already evaluated: "
+        f"{skipped:,}"
+    )
+
+    print(
+        "\nEvaluation finished."
     )
 
 
@@ -187,3 +426,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

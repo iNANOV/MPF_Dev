@@ -91,7 +91,7 @@ N_SIMULATIONS_STAGE1 = 500
 # Stage 2:
 # Focused Monte-Carlo search around the promising region
 # identified by Stage 1.
-N_SIMULATIONS_STAGE2 = 250
+N_SIMULATIONS_STAGE2 = 1500
 
 
 # Threshold resolution.
@@ -114,7 +114,7 @@ THRESHOLD_STEP = 0.01
 # Random seed.
 #
 # Keeping this fixed makes the experiment reproducible.
-RANDOM_STATE = 43
+RANDOM_STATE = 46
 
 
 # ============================================================
