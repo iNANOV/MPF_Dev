@@ -22,7 +22,7 @@ RESULTS_DIR.mkdir(exist_ok=True)
 # STRATEGY
 # ============================================================
 
-STRATEGY = "momentum"
+STRATEGY = "mean_reversion"
 
 # Column containing the signal variable.
 #
@@ -48,7 +48,7 @@ RANKING_COLUMN = "{}_mean_sd"
 #     START_DATE + CALIBRATION_WINDOW
 #
 # is available for the first optimization.
-START_DATE = "2018-01-01"
+START_DATE = "2009-01-01" #"2018-01-01"
 
 
 # Historical calibration window in years.
@@ -91,7 +91,7 @@ N_SIMULATIONS_STAGE1 = 500
 # Stage 2:
 # Focused Monte-Carlo search around the promising region
 # identified by Stage 1.
-N_SIMULATIONS_STAGE2 = 1000
+N_SIMULATIONS_STAGE2 = 2000
 
 
 # Threshold resolution.
@@ -114,7 +114,7 @@ THRESHOLD_STEP = 0.01
 # Random seed.
 #
 # Keeping this fixed makes the experiment reproducible.
-RANDOM_STATE = 45
+RANDOM_STATE = 47
 
 
 # ============================================================
