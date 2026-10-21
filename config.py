@@ -22,7 +22,7 @@ RESULTS_DIR.mkdir(exist_ok=True)
 # STRATEGY
 # ============================================================
 
-STRATEGY = "mean_reversion"
+STRATEGY = "momentum"
 
 # Column containing the signal variable.
 #
@@ -91,7 +91,7 @@ N_SIMULATIONS_STAGE1 = 500
 # Stage 2:
 # Focused Monte-Carlo search around the promising region
 # identified by Stage 1.
-N_SIMULATIONS_STAGE2 = 2000
+N_SIMULATIONS_STAGE2 = 2500
 
 
 # Threshold resolution.
