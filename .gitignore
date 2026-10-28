@@ -228,3 +228,4 @@ notebooks/*
 !notebooks/data.ipynb
 !notebooks/technical_guide.ipynb
 !notebooks/research_for_article_3.ipynb
+!notebooks/research_for_article_4.ipynb
